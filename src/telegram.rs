@@ -35,8 +35,7 @@ pub fn handler(
                         bot.send_message(msg.chat.id, Command::descriptions().to_string())
                             .reply_to_message_id(msg.id)
                             .send()
-                            .await
-                            .unwrap();
+                            .await?;
                     }
                     Command::AImg(prompt) => {
                         let res = ai

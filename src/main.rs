@@ -55,6 +55,8 @@ async fn main() {
                 })
                 .ok();
         }
+
+        log::info!("out of receiver loop, what the fuck");
     });
 
     telegram::handler(bot, client).dispatch().await;
@@ -76,7 +78,13 @@ async fn handle_update(
         }
         Update::Progress { id: _ } => {}
         Update::Finished { id, image_url } => {
-            let (chat_id, message_id) = queue.remove(&id).unwrap();
+            let (chat_id, message_id) = match queue.remove(&id) {
+                Some((chat_id, message_id)) => (chat_id, message_id),
+                None => {
+                    log::debug!("Received image that's not in our queue, ignoring");
+                    return Ok(());
+                }
+            };
 
             let bytes = ai.download_image(image_url).await?;
 
