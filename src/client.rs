@@ -6,7 +6,7 @@ use teloxide::types::{ChatId, MessageId};
 use thiserror::Error;
 use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
 
-use crate::models::InvocationComplete;
+use crate::models::invocations::{InvocationComplete, InvocationError};
 use crate::models::{Enqueue, EnqueueResult};
 use crate::Update;
 
@@ -93,13 +93,34 @@ impl Client {
                 }
                 .boxed()
             })
+            .on("invocation_error", |payload, _client| {
+                async move {
+                    // let error = serde_json::from_str(payload.as_str()
+
+                    let payload = match payload {
+                        Payload::String(payload) => payload,
+                        Payload::Binary(_) => {
+                            log::error!("unexpected binary in invocation-error");
+                            return;
+                        }
+                    };
+
+                    let invocation_error = match serde_json::from_str::<InvocationError>(&payload) {
+                        Ok(error) => error,
+                        Err(error) => {
+                            log::error!(
+                                "unable to parse invocation error: {error}, payload = {payload}"
+                            );
+                            return;
+                        }
+                    };
+
+                    log::error!("invoaction error: {invocation_error:?}");
+                }
+                .boxed()
+            })
             .connect()
             .await?;
-
-        socket
-            .emit("subscribe_queue", json!({"queue_id": "default"}))
-            .await
-            .map_err(Error::Subscription)?;
 
         let client = Self {
             http: reqwest::Client::new(),
@@ -108,7 +129,17 @@ impl Client {
             url,
         };
 
+        client.subscribe().await?;
+
         Ok((client, receiver))
+    }
+
+    /// Subscribe to InvokeAI Socket.IO updates
+    async fn subscribe(&self) -> Result<(), Error> {
+        self.socket
+            .emit("subscribe_queue", json!({"queue_id": "default"}))
+            .await
+            .map_err(Error::Subscription)
     }
 
     /// Add an image to the processing queue
@@ -128,7 +159,6 @@ impl Client {
             .json(&enqueue)
             .send()
             .await?
-            // .json::<EnqueueResult>()
             .text()
             .await?;
 

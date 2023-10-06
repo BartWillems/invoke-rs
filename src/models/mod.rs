@@ -7,6 +7,8 @@ use rand::Rng;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+pub(crate) mod invocations;
+
 thread_local! {
     static RNG: RefCell<ThreadRng> = RefCell::new(rand::thread_rng());
 }
@@ -27,6 +29,12 @@ static DEFAULT_EDGES: Lazy<Vec<Edge>> = Lazy::new(|| {
     let gigachad = include_str!("edges/default.json");
 
     serde_json::from_str::<Vec<Edge>>(gigachad).unwrap()
+});
+
+static LEGO_EDGES: Lazy<Vec<Edge>> = Lazy::new(|| {
+    let lego = include_str!("edges/lego.json");
+
+    serde_json::from_str::<Vec<Edge>>(lego).unwrap()
 });
 
 /// Identifier used to link requests to completed images
@@ -60,22 +68,13 @@ impl Enqueue {
                 graph: Graph {
                     id: GraphId::TextToImageGraph,
                     nodes: Nodes {
-                        main_model_loader: MainModelLoader {
-                            typ: "main_model_loader",
-                            id: "main_model_loader",
-                            is_intermediate: true,
-                            model: Model {
-                                model_name: ModelName::EpicRealism,
-                                base_model: BaseModel::Sd1,
-                                model_type: ModelType::Main,
-                            },
-                        },
-                        clip_skip: ClipSkip {
+                        model_loader: ModelLoaderVariants::default(),
+                        clip_skip: Some(ClipSkip {
                             typ: "clip_skip",
                             id: "clip_skip",
                             skipped_layers: 0,
                             is_intermediate: true,
-                        },
+                        }),
                         positive_conditioning: PositiveConditioning {
                             typ: "compel",
                             id: "positive_conditioning",
@@ -97,15 +96,18 @@ impl Enqueue {
                             height: 512,
                             use_cpu: true,
                         },
-                        denoise_latents: DenoiseLatents {
-                            typ: "denoise_latents",
-                            id: "denoise_latents",
-                            is_intermediate: true,
-                            cfg_scale: 7.5,
-                            scheduler: "euler",
-                            steps: NonZeroU8::try_from(50).unwrap(),
-                            denoising_start: 0,
-                            denoising_end: 1,
+
+                        denoise_latents: DenoiseLatentsVariants::DenoiseLatents {
+                            content: DenoiseLatents {
+                                typ: "denoise_latents",
+                                id: "denoise_latents",
+                                is_intermediate: true,
+                                cfg_scale: 7.5,
+                                scheduler: "dpmpp_sde_k",
+                                steps: NonZeroU8::try_from(30).unwrap(),
+                                denoising_start: 0,
+                                denoising_end: 1,
+                            },
                         },
                         latents_to_image: LatentsToImage {
                             typ: "l2i",
@@ -127,9 +129,9 @@ impl Enqueue {
                                 base_model: BaseModel::Sd1,
                                 model_type: ModelType::Main,
                             },
-                            steps: NonZeroU8::try_from(50).unwrap(),
+                            steps: NonZeroU8::try_from(30).unwrap(),
                             rand_device: "cpu",
-                            scheduler: "euler",
+                            scheduler: "dpmpp_sde_k",
                             controlnets: Vec::new(),
                             loras: vec![MetadataLora {
                                 lora: Lora {
@@ -147,7 +149,7 @@ impl Enqueue {
                             is_intermediate: false,
                             use_cache: false,
                         },
-                        lora_loader_epic_real_life: LoraLoader {
+                        lora_loader_epic_real_life: Some(LoraLoader {
                             id: "lora_loader_epiCRealLife",
                             typ: "lora_loader",
                             is_intermediate: true,
@@ -156,8 +158,9 @@ impl Enqueue {
                                 model_name: LoraModelName::EpicRealLife,
                             },
                             weight: 0.75,
-                        },
+                        }),
                         lora_loader_gigachad: None,
+                        lora_loader_lego: None,
                     },
                     edges: (*Lazy::force(&DEFAULT_EDGES)).clone(),
                 },
@@ -180,13 +183,18 @@ impl Enqueue {
 
     pub fn drawing(mut self) -> Self {
         let model = ModelName::ChildrensStoriesV1SemiReal;
-        self.batch.graph.nodes.main_model_loader.model.model_name = model;
+        let loader = ModelLoader::sd1_with_model(model);
+
+        self.batch.graph.nodes.model_loader = ModelLoaderVariants::from(loader);
         self.batch.graph.nodes.metadata_accumulator.model.model_name = model;
         self
     }
 
     pub fn gigachad(mut self) -> Self {
-        self.batch.graph.nodes.main_model_loader.model.model_name = ModelName::AZovyaPhotorealV2;
+        let model = ModelName::AZovyaPhotorealV2;
+        let loader = ModelLoader::sd1_with_model(model);
+
+        self.batch.graph.nodes.model_loader = ModelLoaderVariants::from(loader);
 
         let lora = Lora {
             base_model: BaseModel::Sd1,
@@ -214,23 +222,80 @@ impl Enqueue {
     }
 
     pub fn anime(mut self) -> Self {
-        self.batch.graph.nodes.main_model_loader.model.model_name = ModelName::CounterfeitV30;
-        self.batch.graph.nodes.metadata_accumulator.model.model_name = ModelName::CounterfeitV30;
-        self.batch.graph.edges = (*Lazy::force(&ANIME_EDGES)).clone();
+        let model = ModelName::CounterfeitV30;
+        let loader = ModelLoader::sd1_with_model(model);
 
-        // Less steps are needed for drawings
-        self.batch.graph.nodes.denoise_latents.steps = 25.try_into().unwrap();
-        self.batch.graph.nodes.metadata_accumulator.steps = 25.try_into().unwrap();
+        self.batch.graph.nodes.model_loader = ModelLoaderVariants::from(loader);
+        self.batch.graph.nodes.metadata_accumulator.model.model_name = model;
+        self.batch.graph.edges = (*Lazy::force(&ANIME_EDGES)).clone();
 
         // 720p resolution
         self.batch.graph.nodes.noise.width = 1280;
         self.batch.graph.nodes.noise.height = 720;
 
-        // Use different sampler because idk
-        self.batch.graph.nodes.denoise_latents.scheduler = "dpmpp_2m_k";
-        self.batch.graph.nodes.metadata_accumulator.scheduler = "dpmpp_2m_k";
-        self.batch.graph.nodes.denoise_latents.cfg_scale = 10.0;
-        self.batch.graph.nodes.metadata_accumulator.cfg_scale = 10.0;
+        self
+    }
+
+    pub fn lego(mut self) -> Self {
+        self.batch.graph.id = GraphId::SdxlTextToImageGraph;
+        let model = ModelName::StableDiffusionXlBase1;
+        let loader = ModelLoader::sdxl_with_model(model);
+        self.batch.graph.nodes.model_loader = ModelLoaderVariants::from(loader);
+        self.batch.graph.nodes.metadata_accumulator.generation_mode = "sdxl_txt2img";
+        self.batch.graph.nodes.metadata_accumulator.model.model_name = model;
+        self.batch.graph.nodes.metadata_accumulator.model.base_model = BaseModel::Sdxl;
+
+        // Resolution
+        self.batch.graph.nodes.noise.width = 896;
+        self.batch.graph.nodes.noise.height = 1088;
+        self.batch.graph.nodes.metadata_accumulator.width = 896;
+        self.batch.graph.nodes.metadata_accumulator.height = 1088;
+
+        // Make sure LEGO is part of the promopt
+        let prompt = self.batch.graph.nodes.positive_conditioning.prompt.as_str();
+        if !prompt.to_uppercase().contains("LEGO") {
+            self.batch.graph.nodes.positive_conditioning.prompt = format!("LEGO {prompt}");
+        }
+
+        self.batch.graph.nodes.positive_conditioning.typ = "sdxl_compel_prompt";
+        self.batch.graph.nodes.negative_conditioning.typ = "sdxl_compel_prompt";
+
+        self.batch.graph.nodes.denoise_latents = DenoiseLatentsVariants::SdxlDenoiseLatents {
+            content: DenoiseLatents {
+                typ: "denoise_latents",
+                id: "sdxl_denoise_latents",
+                is_intermediate: true,
+                cfg_scale: 7.5,
+                scheduler: "dpmpp_sde_k",
+                steps: 30.try_into().unwrap(),
+                denoising_start: 0,
+                denoising_end: 1,
+            },
+        };
+
+        // Lora
+        self.batch.graph.nodes.lora_loader_lego = Some(LoraLoader {
+            id: "lora_loader_lego_v2_0_XL_32",
+            typ: "sdxl_lora_loader",
+            is_intermediate: true,
+            lora: Lora {
+                base_model: BaseModel::Sdxl,
+                model_name: LoraModelName::Lego,
+            },
+            weight: 1.0,
+        });
+        self.batch.graph.nodes.metadata_accumulator.loras = vec![MetadataLora {
+            lora: Lora {
+                base_model: BaseModel::Sdxl,
+                model_name: LoraModelName::Lego,
+            },
+            weight: 1.0,
+        }];
+        self.batch.graph.nodes.lora_loader_epic_real_life = None;
+        self.batch.graph.nodes.clip_skip = None;
+
+        // Edges
+        self.batch.graph.edges = (*Lazy::force(&LEGO_EDGES)).clone();
 
         self
     }
@@ -254,35 +319,118 @@ struct Graph {
 #[serde(rename_all = "snake_case")]
 enum GraphId {
     TextToImageGraph,
+    SdxlTextToImageGraph,
 }
 
 #[derive(Debug, Serialize)]
 struct Nodes {
-    main_model_loader: MainModelLoader,
-    clip_skip: ClipSkip,
+    #[serde(flatten)]
+    model_loader: ModelLoaderVariants,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    clip_skip: Option<ClipSkip>,
     positive_conditioning: PositiveConditioning,
     negative_conditioning: NegativeConditioning,
     noise: Noise,
-    denoise_latents: DenoiseLatents,
+    #[serde(flatten)]
+    denoise_latents: DenoiseLatentsVariants,
     latents_to_image: LatentsToImage,
     metadata_accumulator: MetadataAccumulator,
-    #[serde(rename = "lora_loader_epiCRealLife")]
-    lora_loader_epic_real_life: LoraLoader,
+    #[serde(
+        rename = "lora_loader_epiCRealLife",
+        skip_serializing_if = "Option::is_none"
+    )]
+    lora_loader_epic_real_life: Option<LoraLoader>,
     #[serde(
         rename = "lora_loader_Gigachadv1",
         skip_serializing_if = "Option::is_none"
     )]
     lora_loader_gigachad: Option<LoraLoader>,
+    #[serde(
+        rename = "lora_loader_lego_v2_0_XL_32",
+        skip_serializing_if = "Option::is_none"
+    )]
+    lora_loader_lego: Option<LoraLoader>,
     save_image: SaveImage,
 }
 
 #[derive(Debug, Serialize)]
-struct MainModelLoader {
+#[serde(rename_all = "snake_case")]
+enum ModelLoaderVariants {
+    MainModelLoader {
+        #[serde(flatten)]
+        loader: ModelLoader,
+    },
+    SdxlModelLoader {
+        #[serde(flatten)]
+        loader: ModelLoader,
+    },
+}
+
+impl Default for ModelLoaderVariants {
+    fn default() -> Self {
+        Self::MainModelLoader {
+            loader: ModelLoader::default(),
+        }
+    }
+}
+
+impl From<ModelLoader> for ModelLoaderVariants {
+    fn from(loader: ModelLoader) -> Self {
+        match loader.model.base_model {
+            BaseModel::Sd1 => ModelLoaderVariants::MainModelLoader { loader },
+            BaseModel::Sdxl => ModelLoaderVariants::SdxlModelLoader { loader },
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+struct ModelLoader {
     #[serde(rename = "type")]
     typ: &'static str,
     id: &'static str,
     is_intermediate: bool,
     model: Model,
+}
+
+impl ModelLoader {
+    fn sd1_with_model(model: ModelName) -> Self {
+        Self {
+            model: Model {
+                model_name: model,
+                model_type: ModelType::Main,
+                base_model: BaseModel::Sd1,
+            },
+            ..Default::default()
+        }
+    }
+
+    fn sdxl_with_model(model: ModelName) -> Self {
+        Self {
+            typ: "sdxl_model_loader",
+            id: "sdxl_model_loader",
+            is_intermediate: true,
+            model: Model {
+                model_name: model,
+                base_model: BaseModel::Sdxl,
+                model_type: ModelType::Main,
+            },
+        }
+    }
+}
+
+impl Default for ModelLoader {
+    fn default() -> Self {
+        Self {
+            typ: "main_model_loader",
+            id: "main_model_loader",
+            is_intermediate: true,
+            model: Model {
+                model_name: ModelName::EpicRealism,
+                base_model: BaseModel::Sd1,
+                model_type: ModelType::Main,
+            },
+        }
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -312,6 +460,10 @@ enum ModelName {
 
     #[serde(rename = "epicrealism_naturalSinRC1VAE")]
     EpicRealism,
+
+    /// Sdxl Model
+    #[serde(rename = "stable-diffusion-xl-base-1-0")]
+    StableDiffusionXlBase1,
 }
 
 #[derive(Clone, Copy, Debug, Serialize)]
@@ -320,6 +472,9 @@ enum LoraModelName {
     EpicRealLife,
     #[serde(rename = "Gigachadv1")]
     GigaChad,
+    /// Sdxl, requires "LEGO" in prompt
+    #[serde(rename = "lego_v2.0_XL_32")]
+    Lego,
 }
 
 #[derive(Clone, Copy, Debug, Serialize)]
@@ -327,6 +482,8 @@ enum LoraModelName {
 enum BaseModel {
     #[serde(rename = "sd-1")]
     Sd1,
+    #[serde(rename = "sdxl")]
+    Sdxl,
 }
 
 #[derive(Clone, Copy, Debug, Serialize)]
@@ -372,6 +529,19 @@ struct Noise {
     height: usize,
     use_cpu: bool,
     is_intermediate: bool,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum DenoiseLatentsVariants {
+    DenoiseLatents {
+        #[serde(flatten)]
+        content: DenoiseLatents,
+    },
+    SdxlDenoiseLatents {
+        #[serde(flatten)]
+        content: DenoiseLatents,
+    },
 }
 
 #[derive(Debug, Serialize)]
@@ -465,10 +635,12 @@ struct EdgeNode {
 #[serde(rename_all = "snake_case")]
 enum EdgeNodeId {
     MainModelLoader,
+    SdxlModelLoader,
     ClipSkip,
     PositiveConditioning,
     NegativeConditioning,
     DenoiseLatents,
+    SdxlDenoiseLatents,
     Noise,
     MetadataAccumulator,
     LatentsToImage,
@@ -477,6 +649,8 @@ enum EdgeNodeId {
     GigaChad,
     #[serde(rename = "lora_loader_epiCRealLife")]
     EpicRealLife,
+    #[serde(rename = "lora_loader_lego_v2_0_XL_32")]
+    Lego,
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
@@ -484,6 +658,7 @@ enum EdgeNodeId {
 enum EdgeField {
     Unet,
     Clip,
+    Clip2,
     Noise,
     Conditioning,
     PositiveConditioning,
@@ -527,48 +702,6 @@ struct BatchResult {
     batch_id: BatchId,
 }
 
-#[allow(unused)]
-#[derive(Debug, Deserialize)]
-pub struct InvocationComplete {
-    queue_id: String,
-    queue_item_id: usize,
-    queue_batch_id: BatchId,
-    node: InvocationNode,
-    result: InvocationResult,
-}
-
-impl InvocationComplete {
-    pub fn id(&self) -> BatchId {
-        self.queue_batch_id
-    }
-
-    pub fn still_in_progress(&self) -> bool {
-        self.node.is_intermediate
-    }
-
-    pub fn image_path(&self) -> Option<String> {
-        self.result
-            .image
-            .as_ref()
-            .map(|image| image.image_name.clone())
-    }
-}
-
-#[derive(Debug, Deserialize)]
-struct InvocationNode {
-    is_intermediate: bool,
-}
-
-#[derive(Debug, Deserialize)]
-struct InvocationResult {
-    image: Option<Image>,
-}
-
-#[derive(Debug, Deserialize)]
-struct Image {
-    image_name: String,
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -586,5 +719,18 @@ mod tests {
 
         let anime = Enqueue::from_prompt("random prompt").anime();
         assert!(serde_json::to_value(&anime).is_ok());
+    }
+
+    #[allow(unused)]
+    #[test]
+    fn print_to_file() {
+        use std::fs::File;
+        use std::io::prelude::*;
+
+        let lego = Enqueue::from_prompt("random prompt").lego();
+        let json = serde_json::to_string_pretty(&lego).unwrap();
+
+        let mut file = File::create("_output.json").unwrap();
+        file.write_all(json.as_bytes()).unwrap();
     }
 }

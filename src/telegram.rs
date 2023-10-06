@@ -21,6 +21,8 @@ pub enum Command {
     Gigachad(String),
     #[command(description = "Generate an anime drawing")]
     Anime(String),
+    #[command(description = "LESGO LEGO")]
+    Lego(String),
 }
 
 pub fn handler(
@@ -45,6 +47,7 @@ pub fn handler(
                     Command::Draw(prompt) => Enqueue::from_prompt(prompt).drawing(),
                     Command::Gigachad(prompt) => Enqueue::from_prompt(prompt).gigachad(),
                     Command::Anime(prompt) => Enqueue::from_prompt(prompt).anime(),
+                    Command::Lego(prompt) => Enqueue::from_prompt(prompt).lego(),
                 };
 
                 let res = ai.enqueue_text_to_image(enqueue, msg.chat.id, msg.id).await;
