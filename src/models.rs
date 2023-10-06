@@ -20,6 +20,12 @@ pub struct Enqueue {
     batch: Batch,
 }
 
+impl From<String> for Enqueue {
+    fn from(input: String) -> Self {
+        Self::from_prompt(input)
+    }
+}
+
 impl Enqueue {
     pub fn from_prompt(input: impl Into<String>) -> Self {
         let input = input.into();
@@ -98,7 +104,7 @@ impl Enqueue {
                             positive_prompt: input,
                             negative_prompt: "bad anatomy, low quality, lowres".into(),
                             model: Model {
-                                model_name: ModelName::AZovyaPhotorealV2,
+                                model_name: ModelName::EpicPhotogasmV1,
                                 base_model: BaseModel::Sd1,
                                 model_type: ModelType::Main,
                             },
@@ -266,6 +272,12 @@ impl Enqueue {
             },
         }
     }
+
+    pub fn with_model(mut self, model: ModelName) -> Self {
+        self.batch.graph.nodes.main_model_loader.model.model_name = model;
+        self.batch.graph.nodes.metadata_accumulator.model.model_name = model;
+        self
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -319,10 +331,13 @@ struct Model {
     model_type: ModelType,
 }
 
-#[derive(Debug, Serialize)]
-enum ModelName {
+#[derive(Clone, Copy, Debug, Serialize)]
+pub enum ModelName {
     #[serde(rename = "a-zovya-photoreal-v2")]
     AZovyaPhotorealV2,
+    /// Realistic anime-esque drawings
+    #[serde(rename = "childrens-stories-v1-semi-real")]
+    ChildrensStoriesV1SemiReal,
     #[serde(rename = "epicphotogasm_v1")]
     EpicPhotogasmV1,
     /// Lora only

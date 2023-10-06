@@ -31,13 +31,17 @@ pub enum Update {
 }
 
 #[tokio::main]
-async fn main() {
+async fn main() -> anyhow::Result<()> {
     pretty_env_logger::init();
 
-    let (client, mut receiver) = Client::connect("http://192.168.0.50:9090".into()).await;
+    let invoke_ai_url = std::env::var("INVOKE_AI_URL")?;
+    log::info!("Trying to connect to InvokeAI on {invoke_ai_url}");
+    let (client, mut receiver) = Client::connect(invoke_ai_url).await?;
 
+    log::info!("Initialised InvokeAI client");
     let bot = Bot::from_env();
 
+    log::info!("Initialised Telegram bot");
     let responder_bot = bot.clone();
 
     let ai = client.clone();
@@ -46,8 +50,6 @@ async fn main() {
 
         let bot = responder_bot.clone();
         while let Some(update) = receiver.recv().await {
-            log::info!("Update::{update:?}");
-
             handle_update(&bot, &ai, update, &mut queue)
                 .await
                 .map_err(|error| {
@@ -59,7 +61,10 @@ async fn main() {
         log::info!("out of receiver loop, what the fuck");
     });
 
+    log::info!("Ready to start handling messages...");
     telegram::handler(bot, client).dispatch().await;
+
+    Ok(())
 }
 
 async fn handle_update(
@@ -74,10 +79,15 @@ async fn handle_update(
             chat_id,
             message_id,
         } => {
+            log::info!("started processing {id:?}");
             queue.insert(id, (chat_id, message_id));
         }
-        Update::Progress { id: _ } => {}
+        Update::Progress { id } => {
+            log::debug!("processing update {id:?}");
+        }
         Update::Finished { id, image_url } => {
+            log::info!("processing finished {id:?}, url: {image_url}");
+
             let (chat_id, message_id) = match queue.remove(&id) {
                 Some((chat_id, message_id)) => (chat_id, message_id),
                 None => {

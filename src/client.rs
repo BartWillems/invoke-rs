@@ -2,13 +2,23 @@ use futures_util::FutureExt;
 use rust_socketio::asynchronous::{Client as SocketClient, ClientBuilder as SocketClientBuilder};
 use rust_socketio::Payload;
 use serde_json::json;
-use std::error::Error;
 use teloxide::types::{ChatId, MessageId};
+use thiserror::Error;
 use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
 
 use crate::models::InvocationComplete;
 use crate::models::{Enqueue, EnqueueResult};
 use crate::Update;
+
+#[derive(Error, Debug)]
+pub enum Error {
+    #[error("Failed to call InvokeAI {0}")]
+    Reqwest(#[from] reqwest::Error),
+    #[error("Failed to connecto to SocketIO {0}")]
+    SocketIO(#[from] rust_socketio::Error),
+    #[error("Failed to subscribe to SocketIO queue {0}")]
+    Subscription(rust_socketio::Error),
+}
 
 #[derive(Clone)]
 pub struct Client {
@@ -21,7 +31,7 @@ pub struct Client {
 
 impl Client {
     /// Connect to the Socket.IO server of the InvokeAI instance
-    pub async fn connect(url: String) -> (Self, UnboundedReceiver<Update>) {
+    pub async fn connect(url: String) -> Result<(Self, UnboundedReceiver<Update>), Error> {
         let (sender, receiver) = mpsc::unbounded_channel::<Update>();
 
         let cloned_url = url.clone();
@@ -33,16 +43,25 @@ impl Client {
                 let url = cloned_url.clone();
                 async move {
                     match payload {
-                        Payload::String(content) => {
+                        Payload::String(data) => {
                             let invocation: InvocationComplete =
-                                serde_json::from_str(content.as_str()).unwrap();
+                                match serde_json::from_str(data.as_str()) {
+                                    Ok(invocation) => invocation,
+                                    Err(error) => {
+                                        log::error!("Failed to parse SocketIO JSON: {error}");
+                                        return;
+                                    }
+                                };
 
                             if invocation.still_in_progress() {
                                 sender
                                     .send(Update::Progress {
                                         id: invocation.id(),
                                     })
-                                    .unwrap();
+                                    .map_err(|err| {
+                                        log::error!("Failed to send progress udpate: {err}");
+                                    })
+                                    .ok();
                                 return;
                             }
 
@@ -53,7 +72,12 @@ impl Client {
                                             id: invocation.id(),
                                             image_url: format!("{url}/api/v1/images/i/{path}/full"),
                                         })
-                                        .unwrap();
+                                        .map_err(|err| {
+                                            log::error!(
+                                                "Failed to send completed image URL: {err}"
+                                            );
+                                        })
+                                        .ok();
                                 }
                                 None => log::debug!("missing image, unimportant update"),
                             }
@@ -66,13 +90,12 @@ impl Client {
                 .boxed()
             })
             .connect()
-            .await
-            .unwrap();
+            .await?;
 
         socket
             .emit("subscribe_queue", json!({"queue_id": "default"}))
             .await
-            .unwrap();
+            .map_err(Error::Subscription)?;
 
         let client = Self {
             http: reqwest::Client::new(),
@@ -81,17 +104,17 @@ impl Client {
             url,
         };
 
-        (client, receiver)
+        Ok((client, receiver))
     }
 
     /// Add an image to the processing queue
     pub async fn enqueue_text_to_image(
         &self,
-        prompt: impl Into<String>,
+        input: impl Into<Enqueue>,
         chat_id: ChatId,
         message_id: MessageId,
-    ) -> Result<EnqueueResult, Box<dyn Error>> {
-        let enqueue: Enqueue = Enqueue::from_prompt(prompt);
+    ) -> Result<EnqueueResult, Error> {
+        let enqueue: Enqueue = input.into();
 
         let url = self.url.as_str();
 
@@ -115,7 +138,7 @@ impl Client {
         Ok(res)
     }
 
-    pub async fn download_image(&self, url: String) -> Result<bytes::Bytes, Box<dyn Error>> {
+    pub async fn download_image(&self, url: String) -> Result<bytes::Bytes, Error> {
         self.http
             .get(url)
             .send()

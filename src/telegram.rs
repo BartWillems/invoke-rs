@@ -1,9 +1,9 @@
 use teloxide::prelude::*;
-use teloxide::types::InputFile;
 use teloxide::utils::command::BotCommands;
 use teloxide::Bot;
 
 use crate::client::Client;
+use crate::models::{Enqueue, ModelName};
 
 #[derive(BotCommands, Clone, Debug)]
 #[command(
@@ -13,8 +13,10 @@ use crate::client::Client;
 pub enum Command {
     #[command(description = "display this text.")]
     Help,
-    #[command(description = "Generate an image out of thin air")]
+    #[command(description = "Generate a picture out of thin air and transistors")]
     AImg(String),
+    #[command(description = "Generate an drawing out of thin air and transistors")]
+    Draw(String),
 }
 
 pub fn handler(
@@ -38,12 +40,40 @@ pub fn handler(
                             .await?;
                     }
                     Command::AImg(prompt) => {
-                        let res = ai
-                            .enqueue_text_to_image(prompt, msg.chat.id, msg.id)
-                            .await
-                            .unwrap();
+                        log::info!("Generating image for prompt: `{prompt}`");
 
-                        log::info!("enqueued: {res:?}");
+                        let res = ai.enqueue_text_to_image(prompt, msg.chat.id, msg.id).await;
+
+                        match res {
+                            Ok(enqueued) => log::info!("enqueued: {enqueued:?}"),
+                            Err(error) => {
+                                log::error!("Failed to enqueue draw-prompt: {error}");
+                                bot.send_message(msg.chat.id, "Failed to generate image")
+                                    .reply_to_message_id(msg.id)
+                                    .send()
+                                    .await?;
+                            }
+                        }
+                    }
+
+                    Command::Draw(prompt) => {
+                        log::info!("Generating draw-image for prompt: `{prompt}`");
+
+                        let enqueue = Enqueue::from_prompt(prompt)
+                            .with_model(ModelName::ChildrensStoriesV1SemiReal);
+
+                        let res = ai.enqueue_text_to_image(enqueue, msg.chat.id, msg.id).await;
+
+                        match res {
+                            Ok(enqueued) => log::info!("enqueued: {enqueued:?}"),
+                            Err(error) => {
+                                log::error!("Failed to enqueue draw-prompt: {error}");
+                                bot.send_message(msg.chat.id, "Failed to generate image")
+                                    .reply_to_message_id(msg.id)
+                                    .send()
+                                    .await?;
+                            }
+                        }
                     }
                 }
                 respond(())
@@ -54,28 +84,4 @@ pub fn handler(
         .dependencies(dptree::deps![ai])
         .enable_ctrlc_handler()
         .build()
-}
-
-pub async fn responder(bot: Bot, msg: Message, command: Command) -> ResponseResult<()> {
-    log::debug!(
-        "Incomming command: `{command:?}`, Group ID: `{}`",
-        msg.chat.id
-    );
-
-    match command {
-        Command::Help => {
-            bot.send_message(msg.chat.id, Command::descriptions().to_string())
-                .reply_to_message_id(msg.id)
-                .send()
-                .await
-                .unwrap();
-        }
-        Command::AImg(_query) => {
-            bot.send_photo(msg.chat.id, InputFile::url(
-                "http://192.168.0.50:9090/api/v1/images/i/5bac8aa2-b373-421a-86f2-43558a738cc7.png/full".try_into().unwrap(),
-            )).reply_to_message_id(msg.id).send().await.unwrap();
-        }
-    }
-
-    Ok(())
 }
