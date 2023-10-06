@@ -17,6 +17,12 @@ static GIGACHAD_EDGES: Lazy<Vec<Edge>> = Lazy::new(|| {
     serde_json::from_str::<Vec<Edge>>(gigachad).unwrap()
 });
 
+static ANIME_EDGES: Lazy<Vec<Edge>> = Lazy::new(|| {
+    let gigachad = include_str!("edges/anime.json");
+
+    serde_json::from_str::<Vec<Edge>>(gigachad).unwrap()
+});
+
 static DEFAULT_EDGES: Lazy<Vec<Edge>> = Lazy::new(|| {
     let gigachad = include_str!("edges/default.json");
 
@@ -59,7 +65,7 @@ impl Enqueue {
                             id: "main_model_loader",
                             is_intermediate: true,
                             model: Model {
-                                model_name: ModelName::EpicPhotogasmV1,
+                                model_name: ModelName::EpicRealism,
                                 base_model: BaseModel::Sd1,
                                 model_type: ModelType::Main,
                             },
@@ -117,7 +123,7 @@ impl Enqueue {
                             positive_prompt: input,
                             negative_prompt: "bad anatomy, low quality, lowres".into(),
                             model: Model {
-                                model_name: ModelName::EpicPhotogasmV1,
+                                model_name: ModelName::EpicRealism,
                                 base_model: BaseModel::Sd1,
                                 model_type: ModelType::Main,
                             },
@@ -125,7 +131,13 @@ impl Enqueue {
                             rand_device: "cpu",
                             scheduler: "euler",
                             controlnets: Vec::new(),
-                            loras: Vec::new(),
+                            loras: vec![MetadataLora {
+                                lora: Lora {
+                                    base_model: BaseModel::Sd1,
+                                    model_name: LoraModelName::EpicRealLife,
+                                },
+                                weight: 0.75,
+                            }],
                             ip_adapters: Vec::new(),
                             clip_skip: 0,
                         },
@@ -166,7 +178,8 @@ impl Enqueue {
         }
     }
 
-    pub fn with_model(mut self, model: ModelName) -> Self {
+    pub fn drawing(mut self) -> Self {
+        let model = ModelName::ChildrensStoriesV1SemiReal;
         self.batch.graph.nodes.main_model_loader.model.model_name = model;
         self.batch.graph.nodes.metadata_accumulator.model.model_name = model;
         self
@@ -196,6 +209,28 @@ impl Enqueue {
             .push(MetadataLora { lora, weight: 1.0 });
 
         self.batch.graph.edges = (*Lazy::force(&GIGACHAD_EDGES)).clone();
+
+        self
+    }
+
+    pub fn anime(mut self) -> Self {
+        self.batch.graph.nodes.main_model_loader.model.model_name = ModelName::CounterfeitV30;
+        self.batch.graph.nodes.metadata_accumulator.model.model_name = ModelName::CounterfeitV30;
+        self.batch.graph.edges = (*Lazy::force(&ANIME_EDGES)).clone();
+
+        // Less steps are needed for drawings
+        self.batch.graph.nodes.denoise_latents.steps = 25.try_into().unwrap();
+        self.batch.graph.nodes.metadata_accumulator.steps = 25.try_into().unwrap();
+
+        // 720p resolution
+        self.batch.graph.nodes.noise.width = 1280;
+        self.batch.graph.nodes.noise.height = 720;
+
+        // Use different sampler because idk
+        self.batch.graph.nodes.denoise_latents.scheduler = "dpmpp_2m_k";
+        self.batch.graph.nodes.metadata_accumulator.scheduler = "dpmpp_2m_k";
+        self.batch.graph.nodes.denoise_latents.cfg_scale = 10.0;
+        self.batch.graph.nodes.metadata_accumulator.cfg_scale = 10.0;
 
         self
     }
@@ -257,15 +292,26 @@ struct Model {
     model_type: ModelType,
 }
 
+#[allow(unused)]
 #[derive(Clone, Copy, Debug, Serialize)]
-pub enum ModelName {
+enum ModelName {
     #[serde(rename = "a-zovya-photoreal-v2")]
     AZovyaPhotorealV2,
+
     /// Realistic anime-esque drawings
     #[serde(rename = "childrens-stories-v1-semi-real")]
     ChildrensStoriesV1SemiReal,
+
+    /// Foto realistic portraits etc
     #[serde(rename = "epicphotogasm_v1")]
     EpicPhotogasmV1,
+
+    /// Anime thingies
+    #[serde(rename = "CounterfeitV30_v30")]
+    CounterfeitV30,
+
+    #[serde(rename = "epicrealism_naturalSinRC1VAE")]
+    EpicRealism,
 }
 
 #[derive(Clone, Copy, Debug, Serialize)]
@@ -429,6 +475,8 @@ enum EdgeNodeId {
     SaveImage,
     #[serde(rename = "lora_loader_Gigachadv1")]
     GigaChad,
+    #[serde(rename = "lora_loader_epiCRealLife")]
+    EpicRealLife,
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
@@ -530,10 +578,13 @@ mod tests {
         let default = Enqueue::from_prompt("random prompt");
         assert!(serde_json::to_value(&default).is_ok());
 
-        let drawing = Enqueue::from_prompt("random prompt").with_model(ModelName::EpicPhotogasmV1);
+        let drawing = Enqueue::from_prompt("random prompt").drawing();
         assert!(serde_json::to_value(&drawing).is_ok());
 
         let gigachad = Enqueue::from_prompt("random prompt").gigachad();
         assert!(serde_json::to_value(&gigachad).is_ok());
+
+        let anime = Enqueue::from_prompt("random prompt").anime();
+        assert!(serde_json::to_value(&anime).is_ok());
     }
 }

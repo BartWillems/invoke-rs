@@ -3,7 +3,7 @@ use teloxide::utils::command::BotCommands;
 use teloxide::Bot;
 
 use crate::client::Client;
-use crate::models::{Enqueue, ModelName};
+use crate::models::Enqueue;
 
 #[derive(BotCommands, Clone, Debug)]
 #[command(
@@ -19,6 +19,8 @@ pub enum Command {
     Draw(String),
     #[command(description = "Generate a gigachad picture")]
     Gigachad(String),
+    #[command(description = "Generate an anime drawing")]
+    Anime(String),
 }
 
 pub fn handler(
@@ -37,14 +39,12 @@ pub fn handler(
                             .send()
                             .await?;
 
-                        return respond(());
+                        return Ok(());
                     }
                     Command::AImg(prompt) => Enqueue::from_prompt(prompt),
-
-                    Command::Draw(prompt) => Enqueue::from_prompt(prompt)
-                        .with_model(ModelName::ChildrensStoriesV1SemiReal),
-
+                    Command::Draw(prompt) => Enqueue::from_prompt(prompt).drawing(),
                     Command::Gigachad(prompt) => Enqueue::from_prompt(prompt).gigachad(),
+                    Command::Anime(prompt) => Enqueue::from_prompt(prompt).anime(),
                 };
 
                 let res = ai.enqueue_text_to_image(enqueue, msg.chat.id, msg.id).await;
