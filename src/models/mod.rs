@@ -1,6 +1,7 @@
 use std::cell::RefCell;
 use std::num::NonZeroU8;
 
+use once_cell::sync::Lazy;
 use rand::rngs::ThreadRng;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
@@ -9,6 +10,18 @@ use uuid::Uuid;
 thread_local! {
     static RNG: RefCell<ThreadRng> = RefCell::new(rand::thread_rng());
 }
+
+static GIGACHAD_EDGES: Lazy<Vec<Edge>> = Lazy::new(|| {
+    let gigachad = include_str!("edges/gigachad.json");
+
+    serde_json::from_str::<Vec<Edge>>(gigachad).unwrap()
+});
+
+static DEFAULT_EDGES: Lazy<Vec<Edge>> = Lazy::new(|| {
+    let gigachad = include_str!("edges/default.json");
+
+    serde_json::from_str::<Vec<Edge>>(gigachad).unwrap()
+});
 
 /// Identifier used to link requests to completed images
 #[derive(Clone, Copy, Debug, Deserialize, Hash, Eq, PartialEq)]
@@ -122,139 +135,19 @@ impl Enqueue {
                             is_intermediate: false,
                             use_cache: false,
                         },
-                        lora_loader_epic_real_life: LoraLoaderEpicRealLife {
+                        lora_loader_epic_real_life: LoraLoader {
                             id: "lora_loader_epiCRealLife",
                             typ: "lora_loader",
                             is_intermediate: true,
                             lora: Lora {
                                 base_model: BaseModel::Sd1,
-                                model_name: ModelName::EpicRealLife,
+                                model_name: LoraModelName::EpicRealLife,
                             },
                             weight: 0.75,
                         },
+                        lora_loader_gigachad: None,
                     },
-                    edges: vec![
-                        Edge {
-                            source: EdgeNode {
-                                node_id: EdgeNodeId::MainModelLoader,
-                                field: EdgeField::Unet,
-                            },
-                            destination: EdgeNode {
-                                node_id: EdgeNodeId::DenoiseLatents,
-                                field: EdgeField::Unet,
-                            },
-                        },
-                        Edge {
-                            source: EdgeNode {
-                                node_id: EdgeNodeId::MainModelLoader,
-                                field: EdgeField::Clip,
-                            },
-                            destination: EdgeNode {
-                                node_id: EdgeNodeId::ClipSkip,
-                                field: EdgeField::Clip,
-                            },
-                        },
-                        Edge {
-                            source: EdgeNode {
-                                node_id: EdgeNodeId::ClipSkip,
-                                field: EdgeField::Clip,
-                            },
-                            destination: EdgeNode {
-                                node_id: EdgeNodeId::PositiveConditioning,
-                                field: EdgeField::Clip,
-                            },
-                        },
-                        Edge {
-                            source: EdgeNode {
-                                node_id: EdgeNodeId::ClipSkip,
-                                field: EdgeField::Clip,
-                            },
-                            destination: EdgeNode {
-                                node_id: EdgeNodeId::NegativeConditioning,
-                                field: EdgeField::Clip,
-                            },
-                        },
-                        Edge {
-                            source: EdgeNode {
-                                node_id: EdgeNodeId::PositiveConditioning,
-                                field: EdgeField::Conditioning,
-                            },
-                            destination: EdgeNode {
-                                node_id: EdgeNodeId::DenoiseLatents,
-                                field: EdgeField::PositiveConditioning,
-                            },
-                        },
-                        Edge {
-                            source: EdgeNode {
-                                node_id: EdgeNodeId::NegativeConditioning,
-                                field: EdgeField::Conditioning,
-                            },
-                            destination: EdgeNode {
-                                node_id: EdgeNodeId::DenoiseLatents,
-                                field: EdgeField::NegativeConditioning,
-                            },
-                        },
-                        Edge {
-                            source: EdgeNode {
-                                node_id: EdgeNodeId::Noise,
-                                field: EdgeField::Noise,
-                            },
-                            destination: EdgeNode {
-                                node_id: EdgeNodeId::DenoiseLatents,
-                                field: EdgeField::Noise,
-                            },
-                        },
-                        Edge {
-                            source: EdgeNode {
-                                node_id: EdgeNodeId::DenoiseLatents,
-                                field: EdgeField::Latents,
-                            },
-                            destination: EdgeNode {
-                                node_id: EdgeNodeId::LatentsToImage,
-                                field: EdgeField::Latents,
-                            },
-                        },
-                        Edge {
-                            source: EdgeNode {
-                                node_id: EdgeNodeId::MetadataAccumulator,
-                                field: EdgeField::Metadata,
-                            },
-                            destination: EdgeNode {
-                                node_id: EdgeNodeId::LatentsToImage,
-                                field: EdgeField::Metadata,
-                            },
-                        },
-                        Edge {
-                            source: EdgeNode {
-                                node_id: EdgeNodeId::MainModelLoader,
-                                field: EdgeField::Vae,
-                            },
-                            destination: EdgeNode {
-                                node_id: EdgeNodeId::LatentsToImage,
-                                field: EdgeField::Vae,
-                            },
-                        },
-                        Edge {
-                            source: EdgeNode {
-                                node_id: EdgeNodeId::MetadataAccumulator,
-                                field: EdgeField::Metadata,
-                            },
-                            destination: EdgeNode {
-                                node_id: EdgeNodeId::SaveImage,
-                                field: EdgeField::Metadata,
-                            },
-                        },
-                        Edge {
-                            source: EdgeNode {
-                                node_id: EdgeNodeId::LatentsToImage,
-                                field: EdgeField::Image,
-                            },
-                            destination: EdgeNode {
-                                node_id: EdgeNodeId::SaveImage,
-                                field: EdgeField::Image,
-                            },
-                        },
-                    ],
+                    edges: (*Lazy::force(&DEFAULT_EDGES)).clone(),
                 },
                 runs: 1,
                 data: vec![vec![
@@ -276,6 +169,34 @@ impl Enqueue {
     pub fn with_model(mut self, model: ModelName) -> Self {
         self.batch.graph.nodes.main_model_loader.model.model_name = model;
         self.batch.graph.nodes.metadata_accumulator.model.model_name = model;
+        self
+    }
+
+    pub fn gigachad(mut self) -> Self {
+        self.batch.graph.nodes.main_model_loader.model.model_name = ModelName::AZovyaPhotorealV2;
+
+        let lora = Lora {
+            base_model: BaseModel::Sd1,
+            model_name: LoraModelName::GigaChad,
+        };
+
+        self.batch.graph.nodes.lora_loader_gigachad = Some(LoraLoader {
+            id: "lora_loader_Gigachadv1",
+            typ: "lora_loader",
+            is_intermediate: true,
+            lora,
+            weight: 1.0,
+        });
+
+        self.batch
+            .graph
+            .nodes
+            .metadata_accumulator
+            .loras
+            .push(MetadataLora { lora, weight: 1.0 });
+
+        self.batch.graph.edges = (*Lazy::force(&GIGACHAD_EDGES)).clone();
+
         self
     }
 }
@@ -311,7 +232,12 @@ struct Nodes {
     latents_to_image: LatentsToImage,
     metadata_accumulator: MetadataAccumulator,
     #[serde(rename = "lora_loader_epiCRealLife")]
-    lora_loader_epic_real_life: LoraLoaderEpicRealLife,
+    lora_loader_epic_real_life: LoraLoader,
+    #[serde(
+        rename = "lora_loader_Gigachadv1",
+        skip_serializing_if = "Option::is_none"
+    )]
+    lora_loader_gigachad: Option<LoraLoader>,
     save_image: SaveImage,
 }
 
@@ -340,19 +266,24 @@ pub enum ModelName {
     ChildrensStoriesV1SemiReal,
     #[serde(rename = "epicphotogasm_v1")]
     EpicPhotogasmV1,
-    /// Lora only
-    #[serde(rename = "epiCRealLife")]
-    EpicRealLife,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Clone, Copy, Debug, Serialize)]
+enum LoraModelName {
+    #[serde(rename = "epiCRealLife")]
+    EpicRealLife,
+    #[serde(rename = "Gigachadv1")]
+    GigaChad,
+}
+
+#[derive(Clone, Copy, Debug, Serialize)]
 #[serde(rename_all = "kebab-case")]
 enum BaseModel {
     #[serde(rename = "sd-1")]
     Sd1,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Clone, Copy, Debug, Serialize)]
 #[serde(rename_all = "snake_case")]
 enum ModelType {
     Main,
@@ -435,7 +366,7 @@ struct MetadataAccumulator {
     rand_device: &'static str,
     scheduler: &'static str,
     controlnets: Vec<()>,
-    loras: Vec<()>,
+    loras: Vec<MetadataLora>,
     #[serde(rename = "ipAdapters")]
     ip_adapters: Vec<()>,
     clip_skip: usize,
@@ -451,7 +382,7 @@ struct SaveImage {
 }
 
 #[derive(Debug, Serialize)]
-struct LoraLoaderEpicRealLife {
+struct LoraLoader {
     id: &'static str,
     #[serde(rename = "type")]
     typ: &'static str,
@@ -460,25 +391,31 @@ struct LoraLoaderEpicRealLife {
     weight: f32,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Clone, Copy, Debug, Serialize)]
 struct Lora {
     base_model: BaseModel,
-    model_name: ModelName,
+    model_name: LoraModelName,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Clone, Copy, Debug, Serialize)]
+struct MetadataLora {
+    lora: Lora,
+    weight: f32,
+}
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 struct Edge {
     source: EdgeNode,
     destination: EdgeNode,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 struct EdgeNode {
     node_id: EdgeNodeId,
     field: EdgeField,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 enum EdgeNodeId {
     MainModelLoader,
@@ -490,9 +427,11 @@ enum EdgeNodeId {
     MetadataAccumulator,
     LatentsToImage,
     SaveImage,
+    #[serde(rename = "lora_loader_Gigachadv1")]
+    GigaChad,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 enum EdgeField {
     Unet,
@@ -580,4 +519,21 @@ struct InvocationResult {
 #[derive(Debug, Deserialize)]
 struct Image {
     image_name: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn json_conversion() {
+        let default = Enqueue::from_prompt("random prompt");
+        assert!(serde_json::to_value(&default).is_ok());
+
+        let drawing = Enqueue::from_prompt("random prompt").with_model(ModelName::EpicPhotogasmV1);
+        assert!(serde_json::to_value(&drawing).is_ok());
+
+        let gigachad = Enqueue::from_prompt("random prompt").gigachad();
+        assert!(serde_json::to_value(&gigachad).is_ok());
+    }
 }

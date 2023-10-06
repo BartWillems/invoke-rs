@@ -1,0 +1,122 @@
+[
+    {
+        "destination": {
+            "field": "unet",
+            "node_id": "denoise_latents"
+        },
+        "source": {
+            "field": "unet",
+            "node_id": "main_model_loader"
+        }
+    },
+    {
+        "destination": {
+            "field": "clip",
+            "node_id": "clip_skip"
+        },
+        "source": {
+            "field": "clip",
+            "node_id": "main_model_loader"
+        }
+    },
+    {
+        "destination": {
+            "field": "clip",
+            "node_id": "positive_conditioning"
+        },
+        "source": {
+            "field": "clip",
+            "node_id": "clip_skip"
+        }
+    },
+    {
+        "destination": {
+            "field": "clip",
+            "node_id": "negative_conditioning"
+        },
+        "source": {
+            "field": "clip",
+            "node_id": "clip_skip"
+        }
+    },
+    {
+        "destination": {
+            "field": "positive_conditioning",
+            "node_id": "denoise_latents"
+        },
+        "source": {
+            "field": "conditioning",
+            "node_id": "positive_conditioning"
+        }
+    },
+    {
+        "destination": {
+            "field": "negative_conditioning",
+            "node_id": "denoise_latents"
+        },
+        "source": {
+            "field": "conditioning",
+            "node_id": "negative_conditioning"
+        }
+    },
+    {
+        "destination": {
+            "field": "noise",
+            "node_id": "denoise_latents"
+        },
+        "source": {
+            "field": "noise",
+            "node_id": "noise"
+        }
+    },
+    {
+        "destination": {
+            "field": "latents",
+            "node_id": "latents_to_image"
+        },
+        "source": {
+            "field": "latents",
+            "node_id": "denoise_latents"
+        }
+    },
+    {
+        "destination": {
+            "field": "metadata",
+            "node_id": "latents_to_image"
+        },
+        "source": {
+            "field": "metadata",
+            "node_id": "metadata_accumulator"
+        }
+    },
+    {
+        "destination": {
+            "field": "vae",
+            "node_id": "latents_to_image"
+        },
+        "source": {
+            "field": "vae",
+            "node_id": "main_model_loader"
+        }
+    },
+    {
+        "destination": {
+            "field": "metadata",
+            "node_id": "save_image"
+        },
+        "source": {
+            "field": "metadata",
+            "node_id": "metadata_accumulator"
+        }
+    },
+    {
+        "destination": {
+            "field": "image",
+            "node_id": "save_image"
+        },
+        "source": {
+            "field": "image",
+            "node_id": "latents_to_image"
+        }
+    }
+]

@@ -17,6 +17,8 @@ pub enum Command {
     AImg(String),
     #[command(description = "Generate an drawing out of thin air and transistors")]
     Draw(String),
+    #[command(description = "Generate a gigachad picture")]
+    Gigachad(String),
 }
 
 pub fn handler(
@@ -27,56 +29,38 @@ pub fn handler(
         .filter_command::<Command>()
         .endpoint(
             |bot: Bot, ai: Client, msg: Message, command: Command| async move {
-                log::debug!(
-                    "Incomming command: `{command:?}`, Group ID: `{}`",
-                    msg.chat.id
-                );
-
-                match command {
+                log::info!("Received command: {command:?}, Chat ID: {}", msg.chat.id);
+                let enqueue = match command {
                     Command::Help => {
                         bot.send_message(msg.chat.id, Command::descriptions().to_string())
                             .reply_to_message_id(msg.id)
                             .send()
                             .await?;
+
+                        return respond(());
                     }
-                    Command::AImg(prompt) => {
-                        log::info!("Generating image for prompt: `{prompt}`");
+                    Command::AImg(prompt) => Enqueue::from_prompt(prompt),
 
-                        let res = ai.enqueue_text_to_image(prompt, msg.chat.id, msg.id).await;
+                    Command::Draw(prompt) => Enqueue::from_prompt(prompt)
+                        .with_model(ModelName::ChildrensStoriesV1SemiReal),
 
-                        match res {
-                            Ok(enqueued) => log::info!("enqueued: {enqueued:?}"),
-                            Err(error) => {
-                                log::error!("Failed to enqueue draw-prompt: {error}");
-                                bot.send_message(msg.chat.id, "Failed to generate image")
-                                    .reply_to_message_id(msg.id)
-                                    .send()
-                                    .await?;
-                            }
-                        }
-                    }
+                    Command::Gigachad(prompt) => Enqueue::from_prompt(prompt).gigachad(),
+                };
 
-                    Command::Draw(prompt) => {
-                        log::info!("Generating draw-image for prompt: `{prompt}`");
+                let res = ai.enqueue_text_to_image(enqueue, msg.chat.id, msg.id).await;
 
-                        let enqueue = Enqueue::from_prompt(prompt)
-                            .with_model(ModelName::ChildrensStoriesV1SemiReal);
-
-                        let res = ai.enqueue_text_to_image(enqueue, msg.chat.id, msg.id).await;
-
-                        match res {
-                            Ok(enqueued) => log::info!("enqueued: {enqueued:?}"),
-                            Err(error) => {
-                                log::error!("Failed to enqueue draw-prompt: {error}");
-                                bot.send_message(msg.chat.id, "Failed to generate image")
-                                    .reply_to_message_id(msg.id)
-                                    .send()
-                                    .await?;
-                            }
-                        }
+                match res {
+                    Ok(enqueued) => log::info!("enqueued: {enqueued:?}"),
+                    Err(error) => {
+                        log::error!("Failed to enqueue generate image: {error}");
+                        bot.send_message(msg.chat.id, "Failed to generate image")
+                            .reply_to_message_id(msg.id)
+                            .send()
+                            .await?;
                     }
                 }
-                respond(())
+
+                Ok(())
             },
         );
 

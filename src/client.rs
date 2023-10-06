@@ -18,6 +18,8 @@ pub enum Error {
     SocketIO(#[from] rust_socketio::Error),
     #[error("Failed to subscribe to SocketIO queue {0}")]
     Subscription(rust_socketio::Error),
+    #[error("Failed to decode JSON {0}")]
+    JsonDecode(#[from] serde_json::Error),
 }
 
 #[derive(Clone)]
@@ -48,7 +50,9 @@ impl Client {
                                 match serde_json::from_str(data.as_str()) {
                                     Ok(invocation) => invocation,
                                     Err(error) => {
-                                        log::error!("Failed to parse SocketIO JSON: {error}");
+                                        log::error!(
+                                        "Failed to parse SocketIO JSON: {error}, payload: {data}"
+                                    );
                                         return;
                                     }
                                 };
@@ -124,18 +128,24 @@ impl Client {
             .json(&enqueue)
             .send()
             .await?
-            .json::<EnqueueResult>()
+            // .json::<EnqueueResult>()
+            .text()
             .await?;
+
+        let enqueued: EnqueueResult = serde_json::from_str(res.as_str()).map_err(|error| {
+            log::error!("Failed to parse InvokeAI Response: {error}, payload: {res}");
+            error
+        })?;
 
         self.sender
             .send(Update::Started {
-                id: res.id(),
+                id: enqueued.id(),
                 chat_id,
                 message_id,
             })
             .ok();
 
-        Ok(res)
+        Ok(enqueued)
     }
 
     pub async fn download_image(&self, url: String) -> Result<bytes::Bytes, Error> {
