@@ -665,10 +665,10 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "bytes",
+ "env_logger",
  "futures-util",
  "log",
  "once_cell",
- "pretty_env_logger",
  "rand",
  "reqwest",
  "rust_socketio",
@@ -971,16 +971,6 @@ name = "ppv-lite86"
 version = "0.2.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5b40af805b3121feab8a3c29f04d8ad262fa8e0561883e7653e024ae4479e6de"
-
-[[package]]
-name = "pretty_env_logger"
-version = "0.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "865724d4dbe39d9f3dd3b52b88d859d66bcb2d6a0acfd5ea68a65fb66d4bdc1c"
-dependencies = [
- "env_logger",
- "log",
-]
 
 [[package]]
 name = "proc-macro-error"

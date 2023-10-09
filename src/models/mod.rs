@@ -181,6 +181,13 @@ impl Enqueue {
         }
     }
 
+    fn set_resolution(&mut self, width: usize, height: usize) {
+        self.batch.graph.nodes.noise.width = width;
+        self.batch.graph.nodes.noise.height = height;
+        self.batch.graph.nodes.metadata_accumulator.width = width;
+        self.batch.graph.nodes.metadata_accumulator.height = height;
+    }
+
     pub fn drawing(mut self) -> Self {
         let model = ModelName::ChildrensStoriesV1SemiReal;
         let loader = ModelLoader::sd1_with_model(model);
@@ -195,6 +202,12 @@ impl Enqueue {
         let loader = ModelLoader::sd1_with_model(model);
 
         self.batch.graph.nodes.model_loader = ModelLoaderVariants::from(loader);
+
+        // Make sure Gigachad is part of the promopt
+        let prompt = self.batch.graph.nodes.positive_conditioning.prompt.as_str();
+        if !prompt.to_lowercase().contains("gigachad") {
+            self.batch.graph.nodes.positive_conditioning.prompt = format!("Gigachad, {prompt}");
+        }
 
         let lora = Lora {
             base_model: BaseModel::Sd1,
@@ -230,8 +243,7 @@ impl Enqueue {
         self.batch.graph.edges = (*Lazy::force(&ANIME_EDGES)).clone();
 
         // 720p resolution
-        self.batch.graph.nodes.noise.width = 1280;
-        self.batch.graph.nodes.noise.height = 720;
+        self.set_resolution(1280, 720);
 
         self
     }
@@ -245,11 +257,8 @@ impl Enqueue {
         self.batch.graph.nodes.metadata_accumulator.model.model_name = model;
         self.batch.graph.nodes.metadata_accumulator.model.base_model = BaseModel::Sdxl;
 
-        // Resolution
-        self.batch.graph.nodes.noise.width = 896;
-        self.batch.graph.nodes.noise.height = 1088;
-        self.batch.graph.nodes.metadata_accumulator.width = 896;
-        self.batch.graph.nodes.metadata_accumulator.height = 1088;
+        // Higher is too slow, lower is worse generations, trained to be portrait mode
+        self.set_resolution(704, 1056);
 
         // Make sure LEGO is part of the promopt
         let prompt = self.batch.graph.nodes.positive_conditioning.prompt.as_str();

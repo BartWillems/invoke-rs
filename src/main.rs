@@ -32,7 +32,7 @@ pub enum Update {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    pretty_env_logger::init();
+    env_logger::init();
 
     let invoke_ai_url = std::env::var("INVOKE_AI_URL")?;
     log::info!("Trying to connect to InvokeAI on {invoke_ai_url}");

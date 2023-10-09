@@ -25,6 +25,19 @@ pub enum Command {
     Lego(String),
 }
 
+impl Command {
+    fn override_prompt(&mut self, prompt: &'static str) {
+        match self {
+            Command::Help => {}
+            Command::AImg(_) => *self = Command::AImg(prompt.to_string()),
+            Command::Draw(_) => *self = Command::Draw(prompt.to_string()),
+            Command::Gigachad(_) => *self = Command::Gigachad(prompt.to_string()),
+            Command::Anime(_) => *self = Command::Anime(prompt.to_string()),
+            Command::Lego(_) => *self = Command::Lego(prompt.to_string()),
+        }
+    }
+}
+
 pub fn handler(
     bot: Bot,
     ai: Client,
@@ -32,8 +45,9 @@ pub fn handler(
     let handler = Update::filter_message()
         .filter_command::<Command>()
         .endpoint(
-            |bot: Bot, ai: Client, msg: Message, command: Command| async move {
+            |bot: Bot, ai: Client, msg: Message, mut command: Command| async move {
                 log::info!("Received command: {command:?}, Chat ID: {}", msg.chat.id);
+
                 let enqueue = match command {
                     Command::Help => {
                         bot.send_message(msg.chat.id, Command::descriptions().to_string())
@@ -69,6 +83,6 @@ pub fn handler(
 
     Dispatcher::builder(bot, handler)
         .dependencies(dptree::deps![ai])
-        .enable_ctrlc_handler()
+        .default_handler(|_| async {})
         .build()
 }
