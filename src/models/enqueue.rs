@@ -7,39 +7,11 @@ use rand::Rng;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-pub(crate) mod invocations;
+use super::DEFAULT_EDGES;
 
 thread_local! {
     static RNG: RefCell<ThreadRng> = RefCell::new(rand::thread_rng());
 }
-
-static GIGACHAD_EDGES: Lazy<Vec<Edge>> = Lazy::new(|| {
-    let gigachad = include_str!("edges/gigachad.json");
-
-    serde_json::from_str::<Vec<Edge>>(gigachad).unwrap()
-});
-
-static ANIME_EDGES: Lazy<Vec<Edge>> = Lazy::new(|| {
-    let gigachad = include_str!("edges/anime.json");
-
-    serde_json::from_str::<Vec<Edge>>(gigachad).unwrap()
-});
-
-static DEFAULT_EDGES: Lazy<Vec<Edge>> = Lazy::new(|| {
-    let gigachad = include_str!("edges/default.json");
-
-    serde_json::from_str::<Vec<Edge>>(gigachad).unwrap()
-});
-
-static LEGO_EDGES: Lazy<Vec<Edge>> = Lazy::new(|| {
-    let lego = include_str!("edges/lego.json");
-
-    serde_json::from_str::<Vec<Edge>>(lego).unwrap()
-});
-
-/// Identifier used to link requests to completed images
-#[derive(Clone, Copy, Debug, Deserialize, Hash, Eq, PartialEq)]
-pub struct BatchId(Uuid);
 
 #[derive(Debug, Serialize)]
 pub struct Enqueue {
@@ -181,136 +153,11 @@ impl Enqueue {
         }
     }
 
-    pub fn prompt(&self) -> &str {
-        &self.batch.graph.nodes.metadata_accumulator.positive_prompt
-    }
-
     fn set_resolution(&mut self, width: usize, height: usize) {
         self.batch.graph.nodes.noise.width = width;
         self.batch.graph.nodes.noise.height = height;
         self.batch.graph.nodes.metadata_accumulator.width = width;
         self.batch.graph.nodes.metadata_accumulator.height = height;
-    }
-
-    pub fn drawing(mut self) -> Self {
-        let model = ModelName::ChildrensStoriesV1SemiReal;
-        let loader = ModelLoader::sd1_with_model(model);
-
-        self.batch.graph.nodes.model_loader = ModelLoaderVariants::from(loader);
-        self.batch.graph.nodes.metadata_accumulator.model.model_name = model;
-        self
-    }
-
-    pub fn gigachad(mut self) -> Self {
-        let model = ModelName::AZovyaPhotorealV2;
-        let loader = ModelLoader::sd1_with_model(model);
-
-        self.batch.graph.nodes.model_loader = ModelLoaderVariants::from(loader);
-
-        // Make sure Gigachad is part of the promopt
-        let prompt = self.batch.graph.nodes.positive_conditioning.prompt.as_str();
-        if !prompt.to_lowercase().contains("gigachad") {
-            self.batch.graph.nodes.positive_conditioning.prompt = format!("Gigachad, {prompt}");
-        }
-
-        let lora = Lora {
-            base_model: BaseModel::Sd1,
-            model_name: LoraModelName::GigaChad,
-        };
-
-        self.batch.graph.nodes.lora_loader_gigachad = Some(LoraLoader {
-            id: "lora_loader_Gigachadv1",
-            typ: "lora_loader",
-            is_intermediate: true,
-            lora,
-            weight: 1.0,
-        });
-
-        self.batch
-            .graph
-            .nodes
-            .metadata_accumulator
-            .loras
-            .push(MetadataLora { lora, weight: 1.0 });
-
-        self.batch.graph.edges = (*Lazy::force(&GIGACHAD_EDGES)).clone();
-
-        self
-    }
-
-    pub fn anime(mut self) -> Self {
-        let model = ModelName::CounterfeitV30;
-        let loader = ModelLoader::sd1_with_model(model);
-
-        self.batch.graph.nodes.model_loader = ModelLoaderVariants::from(loader);
-        self.batch.graph.nodes.metadata_accumulator.model.model_name = model;
-        self.batch.graph.edges = (*Lazy::force(&ANIME_EDGES)).clone();
-
-        // 720p resolution
-        self.set_resolution(1280, 720);
-
-        self
-    }
-
-    pub fn lego(mut self) -> Self {
-        self.batch.graph.id = GraphId::SdxlTextToImageGraph;
-        let model = ModelName::StableDiffusionXlBase1;
-        let loader = ModelLoader::sdxl_with_model(model);
-        self.batch.graph.nodes.model_loader = ModelLoaderVariants::from(loader);
-        self.batch.graph.nodes.metadata_accumulator.generation_mode = "sdxl_txt2img";
-        self.batch.graph.nodes.metadata_accumulator.model.model_name = model;
-        self.batch.graph.nodes.metadata_accumulator.model.base_model = BaseModel::Sdxl;
-
-        // Higher is too slow, lower is worse generations, trained to be portrait mode
-        self.set_resolution(704, 1056);
-
-        // Make sure LEGO is part of the promopt
-        let prompt = self.batch.graph.nodes.positive_conditioning.prompt.as_str();
-        if !prompt.to_uppercase().contains("LEGO") {
-            self.batch.graph.nodes.positive_conditioning.prompt = format!("LEGO {prompt}");
-        }
-
-        self.batch.graph.nodes.positive_conditioning.typ = "sdxl_compel_prompt";
-        self.batch.graph.nodes.negative_conditioning.typ = "sdxl_compel_prompt";
-
-        self.batch.graph.nodes.denoise_latents = DenoiseLatentsVariants::SdxlDenoiseLatents {
-            content: DenoiseLatents {
-                typ: "denoise_latents",
-                id: "sdxl_denoise_latents",
-                is_intermediate: true,
-                cfg_scale: 7.5,
-                scheduler: "dpmpp_sde_k",
-                steps: 30.try_into().unwrap(),
-                denoising_start: 0,
-                denoising_end: 1,
-            },
-        };
-
-        // Lora
-        self.batch.graph.nodes.lora_loader_lego = Some(LoraLoader {
-            id: "lora_loader_lego_v2_0_XL_32",
-            typ: "sdxl_lora_loader",
-            is_intermediate: true,
-            lora: Lora {
-                base_model: BaseModel::Sdxl,
-                model_name: LoraModelName::Lego,
-            },
-            weight: 1.0,
-        });
-        self.batch.graph.nodes.metadata_accumulator.loras = vec![MetadataLora {
-            lora: Lora {
-                base_model: BaseModel::Sdxl,
-                model_name: LoraModelName::Lego,
-            },
-            weight: 1.0,
-        }];
-        self.batch.graph.nodes.lora_loader_epic_real_life = None;
-        self.batch.graph.nodes.clip_skip = None;
-
-        // Edges
-        self.batch.graph.edges = (*Lazy::force(&LEGO_EDGES)).clone();
-
-        self
     }
 }
 
@@ -713,37 +560,4 @@ impl EnqueueResult {
 #[derive(Debug, Deserialize)]
 struct BatchResult {
     batch_id: BatchId,
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn json_conversion() {
-        let default = Enqueue::from_prompt("random prompt");
-        assert!(serde_json::to_value(&default).is_ok());
-
-        let drawing = Enqueue::from_prompt("random prompt").drawing();
-        assert!(serde_json::to_value(&drawing).is_ok());
-
-        let gigachad = Enqueue::from_prompt("random prompt").gigachad();
-        assert!(serde_json::to_value(&gigachad).is_ok());
-
-        let anime = Enqueue::from_prompt("random prompt").anime();
-        assert!(serde_json::to_value(&anime).is_ok());
-    }
-
-    #[allow(unused)]
-    #[test]
-    fn print_to_file() {
-        use std::fs::File;
-        use std::io::prelude::*;
-
-        let lego = Enqueue::from_prompt("random prompt").lego();
-        let json = serde_json::to_string_pretty(&lego).unwrap();
-
-        let mut file = File::create("_output.json").unwrap();
-        file.write_all(json.as_bytes()).unwrap();
-    }
 }

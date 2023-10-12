@@ -2,13 +2,13 @@ use futures_util::FutureExt;
 use rust_socketio::asynchronous::{Client as SocketClient, ClientBuilder as SocketClientBuilder};
 use rust_socketio::Payload;
 use serde_json::json;
-use teloxide::types::{ChatId, MessageId};
+use teloxide::types::{ChatId, MessageId, UserId};
 use thiserror::Error;
-use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
+use tokio::sync::mpsc::UnboundedSender;
 
+use crate::handler::Update;
 use crate::models::invocations::{InvocationComplete, InvocationError};
 use crate::models::{Enqueue, EnqueueResult};
-use crate::Update;
 
 #[derive(Error, Debug)]
 pub enum Error {
@@ -23,7 +23,7 @@ pub enum Error {
 }
 
 #[derive(Clone)]
-pub struct Client {
+pub struct InvokeAI {
     http: reqwest::Client,
     #[allow(unused)]
     socket: SocketClient,
@@ -31,18 +31,32 @@ pub struct Client {
     url: String,
 }
 
-impl Client {
+impl InvokeAI {
     /// Connect to the Socket.IO server of the InvokeAI instance
-    pub async fn connect(url: String) -> Result<(Self, UnboundedReceiver<Update>), Error> {
-        let (sender, receiver) = mpsc::unbounded_channel::<Update>();
+    pub async fn connect(url: String, sender: UnboundedSender<Update>) -> Result<Self, Error> {
+        let socket = Self::construct_socket_io_client(url.clone(), sender.clone()).await?;
 
-        let cloned_url = url.clone();
-        let updater = sender.clone();
-        let socket = SocketClientBuilder::new(format!("{url}/ws/socket.io/"))
+        let client = Self {
+            http: reqwest::Client::new(),
+            socket,
+            sender,
+            url,
+        };
+
+        client.subscribe().await?;
+
+        Ok(client)
+    }
+
+    async fn construct_socket_io_client(
+        url: String,
+        updater: UnboundedSender<Update>,
+    ) -> Result<SocketClient, Error> {
+        SocketClientBuilder::new(format!("{url}/ws/socket.io/"))
             .namespace("/")
             .on("invocation_complete", move |payload, _client| {
                 let sender = updater.clone();
-                let url = cloned_url.clone();
+                let url = url.clone();
                 async move {
                     match payload {
                         Payload::String(data) => {
@@ -73,7 +87,7 @@ impl Client {
                                 Some(path) => {
                                     sender
                                         .send(Update::Finished {
-                                            id: invocation.id(),
+                                            batch_id: invocation.id(),
                                             image_url: format!("{url}/api/v1/images/i/{path}/full"),
                                         })
                                         .map_err(|err| {
@@ -95,8 +109,6 @@ impl Client {
             })
             .on("invocation_error", |payload, _client| {
                 async move {
-                    // let error = serde_json::from_str(payload.as_str()
-
                     let payload = match payload {
                         Payload::String(payload) => payload,
                         Payload::Binary(_) => {
@@ -120,18 +132,8 @@ impl Client {
                 .boxed()
             })
             .connect()
-            .await?;
-
-        let client = Self {
-            http: reqwest::Client::new(),
-            socket,
-            sender,
-            url,
-        };
-
-        client.subscribe().await?;
-
-        Ok((client, receiver))
+            .await
+            .map_err(Into::into)
     }
 
     /// Subscribe to InvokeAI Socket.IO updates
@@ -147,6 +149,7 @@ impl Client {
         &self,
         input: impl Into<Enqueue>,
         chat_id: ChatId,
+        user_id: UserId,
         message_id: MessageId,
     ) -> Result<EnqueueResult, Error> {
         let enqueue: Enqueue = input.into();
@@ -171,6 +174,7 @@ impl Client {
             .send(Update::Started {
                 id: enqueued.id(),
                 chat_id,
+                user_id,
                 message_id,
             })
             .ok();

@@ -666,6 +666,7 @@ dependencies = [
  "anyhow",
  "bytes",
  "env_logger",
+ "futures",
  "futures-util",
  "log",
  "once_cell",

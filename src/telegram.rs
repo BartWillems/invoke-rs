@@ -1,8 +1,14 @@
+use teloxide::prelude::Update as TelegramUpdate;
 use teloxide::prelude::*;
 use teloxide::utils::command::BotCommands;
-use teloxide::Bot;
+use teloxide::{
+    payloads::SendMessageSetters,
+    requests::{Request as RequestExt, Requester},
+    types::UserId,
+};
+use tokio::sync::mpsc::UnboundedSender;
 
-use crate::client::Client;
+use crate::handler::Update;
 use crate::models::Enqueue;
 
 #[derive(BotCommands, Clone, Debug)]
@@ -40,13 +46,21 @@ impl Command {
 
 pub fn handler(
     bot: Bot,
-    ai: Client,
+    sender: UnboundedSender<Update>,
 ) -> Dispatcher<Bot, teloxide::RequestError, teloxide::dispatching::DefaultKey> {
-    let handler = Update::filter_message()
+    let handler = TelegramUpdate::filter_message()
         .filter_command::<Command>()
         .endpoint(
-            |bot: Bot, ai: Client, msg: Message, mut command: Command| async move {
+            |bot: Bot, sender: UnboundedSender<Update>, msg: Message, command: Command| async move {
                 log::info!("Received command: {command:?}, Chat ID: {}", msg.chat.id);
+
+                let user = match msg.from() {
+                    Some(user) => user,
+                    None => {
+                        log::warn!("Received a command without a user");
+                        return Ok(());
+                    }
+                };
 
                 let enqueue = match command {
                     Command::Help => {
@@ -64,25 +78,21 @@ pub fn handler(
                     Command::Lego(prompt) => Enqueue::from_prompt(prompt).lego(),
                 };
 
-                let res = ai.enqueue_text_to_image(enqueue, msg.chat.id, msg.id).await;
-
-                match res {
-                    Ok(enqueued) => log::info!("enqueued: {enqueued:?}"),
-                    Err(error) => {
-                        log::error!("Failed to enqueue generate image: {error}");
-                        bot.send_message(msg.chat.id, "Failed to generate image")
-                            .reply_to_message_id(msg.id)
-                            .send()
-                            .await?;
-                    }
-                }
+                sender
+                    .send(Update::Requested {
+                        enqueue,
+                        chat_id: msg.chat.id,
+                        user_id: user.id,
+                        message_id: msg.id,
+                    })
+                    .expect("failed to send update, this is bad");
 
                 Ok(())
             },
         );
 
     Dispatcher::builder(bot, handler)
-        .dependencies(dptree::deps![ai])
+        .dependencies(dptree::deps![sender])
         .default_handler(|_| async {})
         .build()
 }
