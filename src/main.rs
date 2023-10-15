@@ -1,3 +1,5 @@
+use config::Config;
+
 pub mod handler;
 pub mod invoke_ai;
 pub mod models;
@@ -5,15 +7,19 @@ pub mod telegram;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    dotenv::dotenv().ok();
+
     env_logger::init();
 
-    let invoke_ai_url = std::env::var("INVOKE_AI_URL")?;
+    log::info!("Loading config...");
+    let config = Config::builder()
+        .add_source(config::Environment::with_prefix("app").try_parsing(true))
+        .build()?;
+
+    let app_config: handler::Config = config.try_deserialize()?;
 
     log::info!("Initializing...");
-    handler::Handler::try_new(invoke_ai_url)
-        .await?
-        .dispatch()
-        .await;
+    handler::Handler::try_init(app_config).await?;
 
     Ok(())
 }

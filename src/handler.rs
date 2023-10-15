@@ -1,16 +1,18 @@
 use std::{collections::HashMap, num::NonZeroUsize};
 
+use serde::Deserialize;
 use teloxide::{
     payloads::{SendMessageSetters, SendPhotoSetters},
     requests::{Request as RequestExt, Requester},
     types::{ChatId, InputFile, MessageId, UserId},
     Bot,
 };
-use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
+use tokio::sync::mpsc::{self, UnboundedReceiver};
 
 use crate::{
     invoke_ai::{self, InvokeAI},
     models::{BatchId, Enqueue},
+    telegram,
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -23,6 +25,13 @@ pub enum Error {
     TelegramRequest(#[from] teloxide::RequestError),
     #[error("Received an update for a batch that's not in our queue")]
     NotInQueue,
+}
+
+#[derive(Debug, Deserialize, PartialEq, Eq)]
+pub struct Config {
+    invoke_ai_url: String,
+    teloxide_token: String,
+    telegram_admin_user_id: Option<UserId>,
 }
 
 #[derive(Debug)]
@@ -65,39 +74,46 @@ pub struct Handler {
     client: InvokeAI,
     bot: Bot,
     receiver: UnboundedReceiver<Update>,
-    sender: UnboundedSender<Update>,
     /// Maximum number of queries in progress per user
     max_in_progress: NonZeroUsize,
 }
 
 impl Handler {
-    pub async fn try_new(invoke_ai_url: String) -> Result<Self, Error> {
+    /// Initiate the telegram bot and start listening for updates
+    pub async fn try_init(config: Config) -> Result<(), Error> {
         let (sender, receiver) = mpsc::unbounded_channel::<Update>();
 
-        let bot = Bot::from_env();
+        let Config {
+            invoke_ai_url,
+            teloxide_token,
+            telegram_admin_user_id,
+        } = config;
 
+        let bot = Bot::new(teloxide_token);
         let client = InvokeAI::connect(invoke_ai_url, sender.clone()).await?;
 
-        Ok(Self {
+        let handler = Self {
             client,
-            bot,
-            sender,
+            bot: bot.clone(),
             receiver,
             max_in_progress: NonZeroUsize::new(3).unwrap(),
-        })
-    }
-
-    /// Initiate the telegram bot and start listening for updates
-    pub async fn dispatch(self) {
-        let bot = self.bot.clone();
-        let sender = self.sender.clone();
+        };
 
         log::info!("Ready to start handling events...");
         futures::future::join(
-            self.start(),
-            crate::telegram::handler(bot, sender).dispatch(),
+            handler.start(),
+            crate::telegram::handler(
+                bot,
+                sender,
+                telegram::Config {
+                    admin_id: telegram_admin_user_id,
+                },
+            )
+            .dispatch(),
         )
         .await;
+
+        Ok(())
     }
 
     async fn start(mut self) {

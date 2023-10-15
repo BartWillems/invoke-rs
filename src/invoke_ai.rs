@@ -25,7 +25,6 @@ pub enum Error {
 #[derive(Clone)]
 pub struct InvokeAI {
     http: reqwest::Client,
-    #[allow(unused)]
     socket: SocketClient,
     sender: UnboundedSender<Update>,
     url: String,
