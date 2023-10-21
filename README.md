@@ -1,6 +1,10 @@
-# Unofficial InvokeAI Rust Client
+# Unofficial InvokeAI Rust/Telegram Client
 
-This project is currently mashed together, 0 error handling, tightly coupled dependencies etc.
+## Configuration
 
-Needs `TELOXIDE_TOKEN` set for the Telegram bot.
-Needs `INVOKE_AI_URL` set to connect to connect to your InvokeAI instance
+Configuration is done through environment variables
+
+* `TELOXIDE_TOKEN` set for the Telegram bot.
+* `INVOKE_AI_URL` set to connect to connect to your InvokeAI instance
+* `APP_TELEGRAM_ADMIN_USER_ID` (optional) telegram user ID of user who can use admin commands
+* `APP_MAX_IN_PROGRESS` (optional) max amount of in-progress images per user

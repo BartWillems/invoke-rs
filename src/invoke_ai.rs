@@ -1,12 +1,13 @@
+use std::sync::{Arc, OnceLock};
+
 use futures_util::FutureExt;
 use rust_socketio::asynchronous::{Client as SocketClient, ClientBuilder as SocketClientBuilder};
 use rust_socketio::Payload;
 use serde_json::json;
 use teloxide::types::{ChatId, MessageId, UserId};
 use thiserror::Error;
-use tokio::sync::mpsc::UnboundedSender;
 
-use crate::handler::Update;
+use crate::handler::{Notifier, Update};
 use crate::models::invocations::{InvocationComplete, InvocationError};
 use crate::models::{Enqueue, EnqueueResult};
 
@@ -26,19 +27,19 @@ pub enum Error {
 pub struct InvokeAI {
     http: reqwest::Client,
     socket: SocketClient,
-    sender: UnboundedSender<Update>,
+    notifier: Notifier,
     url: String,
 }
 
 impl InvokeAI {
     /// Connect to the Socket.IO server of the InvokeAI instance
-    pub async fn connect(url: String, sender: UnboundedSender<Update>) -> Result<Self, Error> {
-        let socket = Self::construct_socket_io_client(url.clone(), sender.clone()).await?;
+    pub async fn connect(url: String, notifier: Notifier) -> Result<Self, Error> {
+        let socket = Self::construct_socket_io_client(url.clone(), notifier.clone()).await?;
 
         let client = Self {
             http: reqwest::Client::new(),
             socket,
-            sender,
+            notifier,
             url,
         };
 
@@ -47,14 +48,16 @@ impl InvokeAI {
         Ok(client)
     }
 
+    /// Create a SocketIO websocket connection to the InvokeAI instance
     async fn construct_socket_io_client(
         url: String,
-        updater: UnboundedSender<Update>,
+        notifier: Notifier,
     ) -> Result<SocketClient, Error> {
+        let url = Arc::new(url);
         SocketClientBuilder::new(format!("{url}/ws/socket.io/"))
             .namespace("/")
             .on("invocation_complete", move |payload, _client| {
-                let sender = updater.clone();
+                let notifier = notifier.clone();
                 let url = url.clone();
                 async move {
                     match payload {
@@ -71,30 +74,18 @@ impl InvokeAI {
                                 };
 
                             if invocation.still_in_progress() {
-                                sender
-                                    .send(Update::Progress {
-                                        id: invocation.id(),
-                                    })
-                                    .map_err(|err| {
-                                        log::error!("Failed to send progress udpate: {err}");
-                                    })
-                                    .ok();
+                                notifier.notify(Update::Progress {
+                                    id: invocation.id(),
+                                });
                                 return;
                             }
 
                             match invocation.image_path() {
                                 Some(path) => {
-                                    sender
-                                        .send(Update::Finished {
-                                            batch_id: invocation.id(),
-                                            image_url: format!("{url}/api/v1/images/i/{path}/full"),
-                                        })
-                                        .map_err(|err| {
-                                            log::error!(
-                                                "Failed to send completed image URL: {err}"
-                                            );
-                                        })
-                                        .ok();
+                                    notifier.notify(Update::Finished {
+                                        batch_id: invocation.id(),
+                                        image_url: format!("{url}/api/v1/images/i/{path}/full"),
+                                    });
                                 }
                                 None => log::debug!("missing image, unimportant update"),
                             }
@@ -146,18 +137,21 @@ impl InvokeAI {
     /// Add an image to the processing queue
     pub async fn enqueue_text_to_image(
         &self,
-        input: impl Into<Enqueue>,
+        enqueue: Box<Enqueue>,
         chat_id: ChatId,
         user_id: UserId,
         message_id: MessageId,
     ) -> Result<EnqueueResult, Error> {
-        let enqueue: Enqueue = input.into();
+        static CELL: OnceLock<String> = OnceLock::new();
 
-        let url = self.url.as_str();
+        let url = CELL.get_or_init(|| {
+            let url = self.url.as_str();
+            format!("{url}/api/v1/queue/default/enqueue_batch")
+        });
 
         let res = self
             .http
-            .post(format!("{url}/api/v1/queue/default/enqueue_batch"))
+            .post(url)
             .json(&enqueue)
             .send()
             .await?
@@ -169,14 +163,12 @@ impl InvokeAI {
             error
         })?;
 
-        self.sender
-            .send(Update::Started {
-                id: enqueued.id(),
-                chat_id,
-                user_id,
-                message_id,
-            })
-            .ok();
+        self.notifier.notify(Update::Started {
+            id: enqueued.id(),
+            chat_id,
+            user_id,
+            message_id,
+        });
 
         Ok(enqueued)
     }

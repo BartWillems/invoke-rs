@@ -1,9 +1,8 @@
 use teloxide::prelude::Update as TelegramUpdate;
 use teloxide::prelude::*;
 use teloxide::types::UserId;
-use tokio::sync::mpsc::UnboundedSender;
 
-use crate::handler::Update;
+use crate::handler::Notifier;
 
 mod admin;
 mod invoke_ai;
@@ -15,7 +14,7 @@ pub struct Config {
 
 pub fn handler(
     bot: Bot,
-    sender: UnboundedSender<Update>,
+    notifier: Notifier,
     cfg: Config,
 ) -> Dispatcher<Bot, teloxide::RequestError, teloxide::dispatching::DefaultKey> {
     let overrides = admin::Overrides::default();
@@ -39,7 +38,7 @@ pub fn handler(
         );
 
     Dispatcher::builder(bot, handler)
-        .dependencies(dptree::deps![sender, overrides, cfg])
+        .dependencies(dptree::deps![notifier, overrides, cfg])
         .default_handler(|_| async {})
         .build()
 }

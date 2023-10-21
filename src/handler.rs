@@ -7,7 +7,7 @@ use teloxide::{
     types::{ChatId, InputFile, MessageId, UserId},
     Bot,
 };
-use tokio::sync::mpsc::{self, UnboundedReceiver};
+use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
 
 use crate::{
     invoke_ai::{self, InvokeAI},
@@ -32,12 +32,13 @@ pub struct Config {
     invoke_ai_url: String,
     teloxide_token: String,
     telegram_admin_user_id: Option<UserId>,
+    max_in_progress: Option<NonZeroUsize>,
 }
 
 #[derive(Debug)]
 pub enum Update {
     Requested {
-        enqueue: Enqueue,
+        enqueue: Box<Enqueue>,
         chat_id: ChatId,
         user_id: UserId,
         message_id: MessageId,
@@ -70,6 +71,23 @@ enum Response {
     None,
 }
 
+/// Handle for sending state-change notifications
+#[derive(Clone)]
+pub struct Notifier {
+    inner: UnboundedSender<Update>,
+}
+
+impl Notifier {
+    /// Notify the handler about a state change
+    ///
+    /// Panics when the receiver is down
+    pub fn notify(&self, update: Update) {
+        self.inner
+            .send(update)
+            .expect("Failed to send update, this is bad");
+    }
+}
+
 pub struct Handler {
     client: InvokeAI,
     bot: Bot,
@@ -83,20 +101,23 @@ impl Handler {
     pub async fn try_init(config: Config) -> Result<(), Error> {
         let (sender, receiver) = mpsc::unbounded_channel::<Update>();
 
+        let notifier = Notifier { inner: sender };
+
         let Config {
             invoke_ai_url,
             teloxide_token,
             telegram_admin_user_id,
+            max_in_progress,
         } = config;
 
         let bot = Bot::new(teloxide_token);
-        let client = InvokeAI::connect(invoke_ai_url, sender.clone()).await?;
+        let client = InvokeAI::connect(invoke_ai_url, notifier.clone()).await?;
 
         let handler = Self {
             client,
             bot: bot.clone(),
             receiver,
-            max_in_progress: NonZeroUsize::new(3).unwrap(),
+            max_in_progress: max_in_progress.unwrap_or(NonZeroUsize::new(3).unwrap()),
         };
 
         log::info!("Ready to start handling events...");
@@ -104,7 +125,7 @@ impl Handler {
             handler.start(),
             crate::telegram::handler(
                 bot,
-                sender,
+                notifier,
                 telegram::Config {
                     admin_id: telegram_admin_user_id,
                 },
@@ -116,6 +137,7 @@ impl Handler {
         Ok(())
     }
 
+    /// Start handling new requests and InvokeAI progress updates
     async fn start(mut self) {
         let mut queue = Queue::default();
 
@@ -156,15 +178,14 @@ impl Handler {
                     "Received request, Prompt({}), ChatId({chat_id}), UserId({user_id})",
                     enqueue.prompt()
                 );
-                let count = queue.increment_user_count(user_id);
 
-                assert!(count > 0);
+                let in_progress = queue.increment_user_count(user_id);
 
-                if count > self.max_in_progress.get() {
+                if in_progress > self.max_in_progress.get() {
                     queue.decrement_user_count(user_id);
                     return Ok(Response::Message {
-                        chat_id: chat_id,
-                        message_id: message_id,
+                        chat_id,
+                        message_id,
                         message: "You already have too many images in progress".into(),
                     });
                 }

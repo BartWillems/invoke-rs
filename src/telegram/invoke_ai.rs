@@ -1,7 +1,9 @@
 use teloxide::{prelude::*, utils::command::BotCommands};
-use tokio::sync::mpsc::UnboundedSender;
 
-use crate::{handler::Update, models::Enqueue};
+use crate::{
+    handler::{Notifier, Update},
+    models::Enqueue,
+};
 
 #[derive(BotCommands, Clone, Debug)]
 #[command(
@@ -38,7 +40,7 @@ impl Command {
 
 pub async fn handler(
     bot: Bot,
-    sender: UnboundedSender<Update>,
+    notifier: Notifier,
     msg: Message,
     mut command: Command,
     overrides: super::admin::Overrides,
@@ -73,14 +75,12 @@ pub async fn handler(
         Command::Lego(prompt) => Enqueue::from_prompt(prompt).lego(),
     };
 
-    sender
-        .send(Update::Requested {
-            enqueue,
-            chat_id: msg.chat.id,
-            user_id: user.id,
-            message_id: msg.id,
-        })
-        .expect("failed to send update, this is bad");
+    notifier.notify(Update::Requested {
+        enqueue: Box::new(enqueue),
+        chat_id: msg.chat.id,
+        user_id: user.id,
+        message_id: msg.id,
+    });
 
     Ok(())
 }
