@@ -10,9 +10,8 @@ use teloxide::{
 use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
 
 use crate::{
-    invoke_ai::{self, InvokeAI},
+    invoke_ai::{self, client::InvokeAI},
     models::{BatchId, Enqueue},
-    telegram,
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -29,10 +28,8 @@ pub enum Error {
 
 #[derive(Debug, Deserialize, PartialEq, Eq)]
 pub struct Config {
-    invoke_ai_url: String,
-    teloxide_token: String,
-    telegram_admin_user_id: Option<UserId>,
-    max_in_progress: Option<NonZeroUsize>,
+    pub invoke_ai_url: String,
+    pub max_in_progress: Option<NonZeroUsize>,
 }
 
 #[derive(Debug)]
@@ -77,6 +74,12 @@ pub struct Notifier {
     inner: UnboundedSender<Update>,
 }
 
+impl From<UnboundedSender<Update>> for Notifier {
+    fn from(inner: UnboundedSender<Update>) -> Self {
+        Self { inner }
+    }
+}
+
 impl Notifier {
     /// Notify the handler about a state change
     ///
@@ -92,53 +95,44 @@ pub struct Handler {
     client: InvokeAI,
     bot: Bot,
     receiver: UnboundedReceiver<Update>,
+    notifier: Notifier,
     /// Maximum number of queries in progress per user
     max_in_progress: NonZeroUsize,
 }
 
 impl Handler {
     /// Initiate the telegram bot and start listening for updates
-    pub async fn try_init(config: Config) -> Result<(), Error> {
-        let (sender, receiver) = mpsc::unbounded_channel::<Update>();
-
-        let notifier = Notifier { inner: sender };
-
+    pub async fn try_new(
+        config: Config,
+        bot: Bot,
+        http_client: reqwest::Client,
+    ) -> Result<Self, Error> {
         let Config {
             invoke_ai_url,
-            teloxide_token,
-            telegram_admin_user_id,
             max_in_progress,
         } = config;
 
-        let bot = Bot::new(teloxide_token);
-        let client = InvokeAI::connect(invoke_ai_url, notifier.clone()).await?;
+        let (sender, receiver) = mpsc::unbounded_channel::<Update>();
+        let notifier = Notifier::from(sender);
 
-        let handler = Self {
+        let client = InvokeAI::connect(invoke_ai_url, notifier.clone(), http_client).await?;
+
+        Ok(Self {
             client,
             bot: bot.clone(),
             receiver,
+            notifier,
             max_in_progress: max_in_progress.unwrap_or(NonZeroUsize::new(3).unwrap()),
-        };
+        })
+    }
 
-        log::info!("Ready to start handling events...");
-        futures::future::join(
-            handler.start(),
-            crate::telegram::handler(
-                bot,
-                notifier,
-                telegram::Config {
-                    admin_id: telegram_admin_user_id,
-                },
-            )
-            .dispatch(),
-        )
-        .await;
-
-        Ok(())
+    pub fn notifier(&self) -> Notifier {
+        self.notifier.clone()
     }
 
     /// Start handling new requests and InvokeAI progress updates
-    async fn start(mut self) {
+    pub async fn start(mut self) {
+        log::info!("Starting invoke handler");
         let mut queue = Queue::default();
 
         while let Some(update) = self.receiver.recv().await {

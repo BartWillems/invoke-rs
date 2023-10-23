@@ -2,10 +2,12 @@ use teloxide::prelude::Update as TelegramUpdate;
 use teloxide::prelude::*;
 use teloxide::types::UserId;
 
-use crate::handler::Notifier;
+use crate::handler::invoke;
+use crate::handler::local;
 
 mod admin;
 mod invoke_ai;
+mod local_ai;
 
 #[derive(Clone, Copy)]
 pub struct Config {
@@ -14,7 +16,8 @@ pub struct Config {
 
 pub fn handler(
     bot: Bot,
-    notifier: Notifier,
+    invoke_notifier: invoke::Notifier,
+    local_notifier: local::Notifier,
     cfg: Config,
 ) -> Dispatcher<Bot, teloxide::RequestError, teloxide::dispatching::DefaultKey> {
     let overrides = admin::Overrides::default();
@@ -35,10 +38,20 @@ pub fn handler(
             dptree::entry()
                 .filter_command::<invoke_ai::Command>()
                 .endpoint(invoke_ai::handler),
+        )
+        .branch(
+            dptree::entry()
+                .filter_command::<local_ai::Command>()
+                .endpoint(local_ai::handler),
         );
 
     Dispatcher::builder(bot, handler)
-        .dependencies(dptree::deps![notifier, overrides, cfg])
+        .dependencies(dptree::deps![
+            invoke_notifier,
+            local_notifier,
+            overrides,
+            cfg
+        ])
         .default_handler(|_| async {})
         .build()
 }

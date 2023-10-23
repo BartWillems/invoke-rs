@@ -5,23 +5,12 @@ use rust_socketio::asynchronous::{Client as SocketClient, ClientBuilder as Socke
 use rust_socketio::Payload;
 use serde_json::json;
 use teloxide::types::{ChatId, MessageId, UserId};
-use thiserror::Error;
 
-use crate::handler::{Notifier, Update};
+use crate::handler::invoke::{Notifier, Update};
 use crate::models::invocations::{InvocationComplete, InvocationError};
 use crate::models::{Enqueue, EnqueueResult};
 
-#[derive(Error, Debug)]
-pub enum Error {
-    #[error("Failed to call InvokeAI {0}")]
-    Reqwest(#[from] reqwest::Error),
-    #[error("Failed to connecto to SocketIO {0}")]
-    SocketIO(#[from] rust_socketio::Error),
-    #[error("Failed to subscribe to SocketIO queue {0}")]
-    Subscription(rust_socketio::Error),
-    #[error("Failed to decode JSON {0}")]
-    JsonDecode(#[from] serde_json::Error),
-}
+use super::Error;
 
 #[derive(Clone)]
 pub struct InvokeAI {
@@ -33,11 +22,15 @@ pub struct InvokeAI {
 
 impl InvokeAI {
     /// Connect to the Socket.IO server of the InvokeAI instance
-    pub async fn connect(url: String, notifier: Notifier) -> Result<Self, Error> {
+    pub async fn connect(
+        url: String,
+        notifier: Notifier,
+        http_client: reqwest::Client,
+    ) -> Result<Self, Error> {
         let socket = Self::construct_socket_io_client(url.clone(), notifier.clone()).await?;
 
         let client = Self {
-            http: reqwest::Client::new(),
+            http: http_client,
             socket,
             notifier,
             url,

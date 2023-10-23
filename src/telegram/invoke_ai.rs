@@ -1,7 +1,7 @@
 use teloxide::{prelude::*, utils::command::BotCommands};
 
 use crate::{
-    handler::{Notifier, Update},
+    handler::invoke::{Notifier, Update},
     models::Enqueue,
 };
 
@@ -11,8 +11,6 @@ use crate::{
     description = "These commands are supported:"
 )]
 pub enum Command {
-    #[command(description = "display this text.")]
-    Help,
     #[command(description = "Generate a picture out of thin air and transistors")]
     AImg(String),
     #[command(description = "Generate an drawing out of thin air and transistors")]
@@ -28,7 +26,6 @@ pub enum Command {
 impl Command {
     fn override_prompt(&mut self, prompt: impl ToString) {
         match self {
-            Command::Help => {}
             Command::AImg(_) => *self = Command::AImg(prompt.to_string()),
             Command::Draw(_) => *self = Command::Draw(prompt.to_string()),
             Command::Gigachad(_) => *self = Command::Gigachad(prompt.to_string()),
@@ -39,7 +36,6 @@ impl Command {
 }
 
 pub async fn handler(
-    bot: Bot,
     notifier: Notifier,
     msg: Message,
     mut command: Command,
@@ -60,14 +56,6 @@ pub async fn handler(
     }
 
     let enqueue = match command {
-        Command::Help => {
-            bot.send_message(msg.chat.id, Command::descriptions().to_string())
-                .reply_to_message_id(msg.id)
-                .send()
-                .await?;
-
-            return Ok(());
-        }
         Command::AImg(prompt) => Enqueue::from_prompt(prompt),
         Command::Draw(prompt) => Enqueue::from_prompt(prompt).drawing(),
         Command::Gigachad(prompt) => Enqueue::from_prompt(prompt).gigachad(),
