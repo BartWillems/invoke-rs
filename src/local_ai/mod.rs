@@ -1,8 +1,8 @@
-mod models;
-
 use crate::handler::local::{Identifier, Notifier, Update};
 use models::{Request, Response};
 use std::sync::Arc;
+
+mod models;
 
 #[derive(Clone)]
 pub struct LocalAI {

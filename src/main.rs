@@ -3,7 +3,6 @@ use config::Config;
 pub mod handler;
 pub mod invoke_ai;
 pub mod local_ai;
-pub mod models;
 pub mod telegram;
 
 #[tokio::main]

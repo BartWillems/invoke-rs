@@ -2,7 +2,7 @@ use teloxide::{prelude::*, utils::command::BotCommands};
 
 use crate::{
     handler::invoke::{Notifier, Update},
-    models::Enqueue,
+    invoke_ai::models::Enqueue,
 };
 
 #[derive(BotCommands, Clone, Debug)]

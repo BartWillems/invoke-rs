@@ -41,7 +41,7 @@
     },
     {
         "source": {
-            "node_id": "metadata_accumulator",
+            "node_id": "core_metadata",
             "field": "metadata"
         },
         "destination": {
@@ -141,21 +141,11 @@
     },
     {
         "source": {
-            "node_id": "metadata_accumulator",
-            "field": "metadata"
-        },
-        "destination": {
-            "node_id": "save_image",
-            "field": "metadata"
-        }
-    },
-    {
-        "source": {
             "node_id": "latents_to_image",
             "field": "image"
         },
         "destination": {
-            "node_id": "save_image",
+            "node_id": "linear_ui_output",
             "field": "image"
         }
     }

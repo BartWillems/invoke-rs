@@ -2,40 +2,10 @@
     {
         "source": {
             "node_id": "main_model_loader",
-            "field": "unet"
-        },
-        "destination": {
-            "node_id": "denoise_latents",
-            "field": "unet"
-        }
-    },
-    {
-        "source": {
-            "node_id": "main_model_loader",
             "field": "clip"
         },
         "destination": {
             "node_id": "clip_skip",
-            "field": "clip"
-        }
-    },
-    {
-        "source": {
-            "node_id": "clip_skip",
-            "field": "clip"
-        },
-        "destination": {
-            "node_id": "positive_conditioning",
-            "field": "clip"
-        }
-    },
-    {
-        "source": {
-            "node_id": "clip_skip",
-            "field": "clip"
-        },
-        "destination": {
-            "node_id": "negative_conditioning",
             "field": "clip"
         }
     },
@@ -81,7 +51,7 @@
     },
     {
         "source": {
-            "node_id": "metadata_accumulator",
+            "node_id": "core_metadata",
             "field": "metadata"
         },
         "destination": {
@@ -101,12 +71,52 @@
     },
     {
         "source": {
-            "node_id": "metadata_accumulator",
-            "field": "metadata"
+            "node_id": "main_model_loader",
+            "field": "unet"
         },
         "destination": {
-            "node_id": "save_image",
-            "field": "metadata"
+            "node_id": "lora_loader_epiCRealLife",
+            "field": "unet"
+        }
+    },
+    {
+        "source": {
+            "node_id": "clip_skip",
+            "field": "clip"
+        },
+        "destination": {
+            "node_id": "lora_loader_epiCRealLife",
+            "field": "clip"
+        }
+    },
+    {
+        "source": {
+            "node_id": "lora_loader_epiCRealLife",
+            "field": "unet"
+        },
+        "destination": {
+            "node_id": "denoise_latents",
+            "field": "unet"
+        }
+    },
+    {
+        "source": {
+            "node_id": "lora_loader_epiCRealLife",
+            "field": "clip"
+        },
+        "destination": {
+            "node_id": "positive_conditioning",
+            "field": "clip"
+        }
+    },
+    {
+        "source": {
+            "node_id": "lora_loader_epiCRealLife",
+            "field": "clip"
+        },
+        "destination": {
+            "node_id": "negative_conditioning",
+            "field": "clip"
         }
     },
     {
@@ -115,7 +125,7 @@
             "field": "image"
         },
         "destination": {
-            "node_id": "save_image",
+            "node_id": "linear_ui_output",
             "field": "image"
         }
     }

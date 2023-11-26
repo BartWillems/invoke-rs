@@ -9,8 +9,9 @@ use teloxide::{
 };
 use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
 
-use crate::{
-    invoke_ai::{self, client::InvokeAI},
+use crate::invoke_ai::{
+    self,
+    client::InvokeAI,
     models::{BatchId, Enqueue},
 };
 

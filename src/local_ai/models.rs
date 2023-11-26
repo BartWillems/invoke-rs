@@ -51,7 +51,7 @@ enum Model {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-struct Message {
+pub struct Message {
     role: Role,
     content: String,
 }

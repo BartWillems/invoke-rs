@@ -7,8 +7,8 @@ use serde_json::json;
 use teloxide::types::{ChatId, MessageId, UserId};
 
 use crate::handler::invoke::{Notifier, Update};
-use crate::models::invocations::{InvocationComplete, InvocationError};
-use crate::models::{Enqueue, EnqueueResult};
+use crate::invoke_ai::models::invocations::{InvocationComplete, InvocationError};
+use crate::invoke_ai::models::{Enqueue, EnqueueResult};
 
 use super::Error;
 
@@ -166,6 +166,7 @@ impl InvokeAI {
         Ok(enqueued)
     }
 
+    /// Download image bytes from a given URL
     pub async fn download_image(&self, url: String) -> Result<bytes::Bytes, Error> {
         self.http
             .get(url)

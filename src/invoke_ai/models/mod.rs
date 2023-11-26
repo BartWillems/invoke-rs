@@ -115,9 +115,9 @@ impl Enqueue {
                             is_intermediate: true,
                             fp32: true,
                         },
-                        metadata_accumulator: MetadataAccumulator {
-                            typ: "metadata_accumulator",
-                            id: "metadata_accumulator",
+                        core_metadata: CoreMetadata {
+                            typ: "core_metadata",
+                            id: "core_metadata",
                             generation_mode: "txt2img",
                             cfg_scale: 7.5,
                             width: 512,
@@ -125,7 +125,7 @@ impl Enqueue {
                             positive_prompt: input,
                             negative_prompt: "bad anatomy, low quality, lowres".into(),
                             model: Model {
-                                model_name: ModelName::EpicPhotogasmV1,
+                                model_name: ModelName::AZovyaPhotorealV2,
                                 base_model: BaseModel::Sd1,
                                 model_type: ModelType::Main,
                             },
@@ -143,9 +143,15 @@ impl Enqueue {
                             ip_adapters: Vec::new(),
                             clip_skip: 0,
                         },
-                        save_image: SaveImage {
-                            typ: "save_image",
-                            id: "save_image",
+                        // save_image: SaveImage {
+                        //     typ: "save_image",
+                        //     id: "save_image",
+                        //     is_intermediate: false,
+                        //     use_cache: false,
+                        // },
+                        linear_ui_output: LinearUiOutput {
+                            typ: "linear_ui_output",
+                            id: "linear_ui_output",
                             is_intermediate: false,
                             use_cache: false,
                         },
@@ -172,7 +178,7 @@ impl Enqueue {
                         items: vec![data_seed],
                     },
                     Data {
-                        node_path: NodePath::MetadataAccumulator,
+                        node_path: NodePath::CoreMetadata,
                         field_name: "seed".into(),
                         items: vec![data_seed],
                     },
@@ -182,14 +188,14 @@ impl Enqueue {
     }
 
     pub fn prompt(&self) -> &str {
-        &self.batch.graph.nodes.metadata_accumulator.positive_prompt
+        &self.batch.graph.nodes.core_metadata.positive_prompt
     }
 
     fn set_resolution(&mut self, width: usize, height: usize) {
         self.batch.graph.nodes.noise.width = width;
         self.batch.graph.nodes.noise.height = height;
-        self.batch.graph.nodes.metadata_accumulator.width = width;
-        self.batch.graph.nodes.metadata_accumulator.height = height;
+        self.batch.graph.nodes.core_metadata.width = width;
+        self.batch.graph.nodes.core_metadata.height = height;
     }
 
     pub fn drawing(mut self) -> Self {
@@ -197,7 +203,7 @@ impl Enqueue {
         let loader = ModelLoader::sd1_with_model(model);
 
         self.batch.graph.nodes.model_loader = ModelLoaderVariants::from(loader);
-        self.batch.graph.nodes.metadata_accumulator.model.model_name = model;
+        self.batch.graph.nodes.core_metadata.model.model_name = model;
         self
     }
 
@@ -229,7 +235,7 @@ impl Enqueue {
         self.batch
             .graph
             .nodes
-            .metadata_accumulator
+            .core_metadata
             .loras
             .push(MetadataLora { lora, weight: 1.0 });
 
@@ -243,7 +249,7 @@ impl Enqueue {
         let loader = ModelLoader::sd1_with_model(model);
 
         self.batch.graph.nodes.model_loader = ModelLoaderVariants::from(loader);
-        self.batch.graph.nodes.metadata_accumulator.model.model_name = model;
+        self.batch.graph.nodes.core_metadata.model.model_name = model;
         self.batch.graph.edges = (*Lazy::force(&ANIME_EDGES)).clone();
 
         // 720p resolution
@@ -257,9 +263,9 @@ impl Enqueue {
         let model = ModelName::StableDiffusionXlBase1;
         let loader = ModelLoader::sdxl_with_model(model);
         self.batch.graph.nodes.model_loader = ModelLoaderVariants::from(loader);
-        self.batch.graph.nodes.metadata_accumulator.generation_mode = "sdxl_txt2img";
-        self.batch.graph.nodes.metadata_accumulator.model.model_name = model;
-        self.batch.graph.nodes.metadata_accumulator.model.base_model = BaseModel::Sdxl;
+        self.batch.graph.nodes.core_metadata.generation_mode = "sdxl_txt2img";
+        self.batch.graph.nodes.core_metadata.model.model_name = model;
+        self.batch.graph.nodes.core_metadata.model.base_model = BaseModel::Sdxl;
 
         // Higher is too slow, lower is worse generations, trained to be portrait mode
         self.set_resolution(704, 1056);
@@ -297,7 +303,7 @@ impl Enqueue {
             },
             weight: 1.0,
         });
-        self.batch.graph.nodes.metadata_accumulator.loras = vec![MetadataLora {
+        self.batch.graph.nodes.core_metadata.loras = vec![MetadataLora {
             lora: Lora {
                 base_model: BaseModel::Sdxl,
                 model_name: LoraModelName::Lego,
@@ -347,7 +353,7 @@ struct Nodes {
     #[serde(flatten)]
     denoise_latents: DenoiseLatentsVariants,
     latents_to_image: LatentsToImage,
-    metadata_accumulator: MetadataAccumulator,
+    core_metadata: CoreMetadata,
     #[serde(
         rename = "lora_loader_epiCRealLife",
         skip_serializing_if = "Option::is_none"
@@ -363,7 +369,7 @@ struct Nodes {
         skip_serializing_if = "Option::is_none"
     )]
     lora_loader_lego: Option<LoraLoader>,
-    save_image: SaveImage,
+    linear_ui_output: LinearUiOutput,
 }
 
 #[derive(Debug, Serialize)]
@@ -438,7 +444,7 @@ impl Default for ModelLoader {
             id: "main_model_loader",
             is_intermediate: true,
             model: Model {
-                model_name: ModelName::EpicPhotogasmV1,
+                model_name: ModelName::AZovyaPhotorealV2,
                 base_model: BaseModel::Sd1,
                 model_type: ModelType::Main,
             },
@@ -580,7 +586,7 @@ struct LatentsToImage {
 }
 
 #[derive(Debug, Serialize)]
-struct MetadataAccumulator {
+struct CoreMetadata {
     id: &'static str,
     #[serde(rename = "type")]
     typ: &'static str,
@@ -602,7 +608,7 @@ struct MetadataAccumulator {
 }
 
 #[derive(Debug, Serialize)]
-struct SaveImage {
+struct LinearUiOutput {
     id: &'static str,
     #[serde(rename = "type")]
     typ: &'static str,
@@ -655,9 +661,10 @@ enum EdgeNodeId {
     DenoiseLatents,
     SdxlDenoiseLatents,
     Noise,
-    MetadataAccumulator,
+    CoreMetadata,
     LatentsToImage,
     SaveImage,
+    LinearUiOutput,
     #[serde(rename = "lora_loader_Gigachadv1")]
     GigaChad,
     #[serde(rename = "lora_loader_epiCRealLife")]
@@ -693,7 +700,7 @@ struct Data {
 #[serde(rename_all = "snake_case")]
 enum NodePath {
     Noise,
-    MetadataAccumulator,
+    CoreMetadata,
 }
 
 #[allow(unused)]
