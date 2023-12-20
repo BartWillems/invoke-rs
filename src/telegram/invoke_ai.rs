@@ -21,6 +21,8 @@ pub enum Command {
     Anime(String),
     #[command(description = "LESGO LEGO")]
     Lego(String),
+    #[command(description = "Knitted, Crochet, ...")]
+    Knit(String),
 }
 
 impl Command {
@@ -31,6 +33,7 @@ impl Command {
             Command::Gigachad(_) => *self = Command::Gigachad(prompt.to_string()),
             Command::Anime(_) => *self = Command::Anime(prompt.to_string()),
             Command::Lego(_) => *self = Command::Lego(prompt.to_string()),
+            Command::Knit(_) => *self = Command::Knit(prompt.to_string()),
         }
     }
 }
@@ -55,12 +58,17 @@ pub async fn handler(
         command.override_prompt(prompt);
     }
 
+    if user.id == UserId(172179034) {
+        command.override_prompt("man dressed as clown stabbing tire");
+    }
+
     let enqueue = match command {
         Command::AImg(prompt) => Enqueue::from_prompt(prompt),
         Command::Draw(prompt) => Enqueue::from_prompt(prompt).drawing(),
         Command::Gigachad(prompt) => Enqueue::from_prompt(prompt).gigachad(),
         Command::Anime(prompt) => Enqueue::from_prompt(prompt).anime(),
         Command::Lego(prompt) => Enqueue::from_prompt(prompt).lego(),
+        Command::Knit(prompt) => Enqueue::from_prompt(prompt).knit(),
     };
 
     notifier.notify(Update::Requested {

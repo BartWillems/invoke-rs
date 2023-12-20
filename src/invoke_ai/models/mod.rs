@@ -37,6 +37,12 @@ static LEGO_EDGES: Lazy<Vec<Edge>> = Lazy::new(|| {
     serde_json::from_str::<Vec<Edge>>(lego).unwrap()
 });
 
+static KNITTED_EDGES: Lazy<Vec<Edge>> = Lazy::new(|| {
+    let lego = include_str!("edges/knit.json");
+
+    serde_json::from_str::<Vec<Edge>>(lego).unwrap()
+});
+
 /// Identifier used to link requests to completed images
 #[derive(Clone, Copy, Debug, Deserialize, Hash, Eq, PartialEq)]
 pub struct BatchId(Uuid);
@@ -96,7 +102,6 @@ impl Enqueue {
                             height: 512,
                             use_cpu: true,
                         },
-
                         denoise_latents: DenoiseLatentsVariants::DenoiseLatents {
                             content: DenoiseLatents {
                                 typ: "denoise_latents",
@@ -143,12 +148,6 @@ impl Enqueue {
                             ip_adapters: Vec::new(),
                             clip_skip: 0,
                         },
-                        // save_image: SaveImage {
-                        //     typ: "save_image",
-                        //     id: "save_image",
-                        //     is_intermediate: false,
-                        //     use_cache: false,
-                        // },
                         linear_ui_output: LinearUiOutput {
                             typ: "linear_ui_output",
                             id: "linear_ui_output",
@@ -167,6 +166,7 @@ impl Enqueue {
                         }),
                         lora_loader_gigachad: None,
                         lora_loader_lego: None,
+                        lora_loader_knittedstyle2: None,
                     },
                     edges: (*Lazy::force(&DEFAULT_EDGES)).clone(),
                 },
@@ -198,6 +198,18 @@ impl Enqueue {
         self.batch.graph.nodes.core_metadata.height = height;
     }
 
+    fn ensure_prompt_contains(&mut self, needs: &'static str) {
+        let prompt = self.batch.graph.nodes.positive_conditioning.prompt.as_str();
+        if !prompt.to_lowercase().contains(&needs.to_lowercase()) {
+            self.batch.graph.nodes.positive_conditioning.prompt = format!("{needs}, {prompt}");
+        }
+    }
+
+    fn set_negative_prompt<T: Into<String> + Clone>(&mut self, prompt: T) {
+        self.batch.graph.nodes.negative_conditioning.prompt = prompt.clone().into();
+        self.batch.graph.nodes.core_metadata.negative_prompt = prompt.into();
+    }
+
     pub fn drawing(mut self) -> Self {
         let model = ModelName::ChildrensStoriesV1SemiReal;
         let loader = ModelLoader::sd1_with_model(model);
@@ -214,10 +226,7 @@ impl Enqueue {
         self.batch.graph.nodes.model_loader = ModelLoaderVariants::from(loader);
 
         // Make sure Gigachad is part of the promopt
-        let prompt = self.batch.graph.nodes.positive_conditioning.prompt.as_str();
-        if !prompt.to_lowercase().contains("gigachad") {
-            self.batch.graph.nodes.positive_conditioning.prompt = format!("Gigachad, {prompt}");
-        }
+        self.ensure_prompt_contains("Gigachad");
 
         let lora = Lora {
             base_model: BaseModel::Sd1,
@@ -271,10 +280,7 @@ impl Enqueue {
         self.set_resolution(704, 1056);
 
         // Make sure LEGO is part of the promopt
-        let prompt = self.batch.graph.nodes.positive_conditioning.prompt.as_str();
-        if !prompt.to_uppercase().contains("LEGO") {
-            self.batch.graph.nodes.positive_conditioning.prompt = format!("LEGO {prompt}");
-        }
+        self.ensure_prompt_contains("LEGO");
 
         self.batch.graph.nodes.positive_conditioning.typ = "sdxl_compel_prompt";
         self.batch.graph.nodes.negative_conditioning.typ = "sdxl_compel_prompt";
@@ -315,6 +321,28 @@ impl Enqueue {
 
         // Edges
         self.batch.graph.edges = (*Lazy::force(&LEGO_EDGES)).clone();
+
+        self
+    }
+
+    pub fn knit(mut self) -> Self {
+        self.batch.graph.nodes.lora_loader_epic_real_life = None;
+        self.batch.graph.nodes.lora_loader_knittedstyle2 = Some(LoraLoader {
+            id: "lora_loader_knittedstyle2",
+            typ: "lora_loader",
+            is_intermediate: true,
+            lora: Lora {
+                base_model: BaseModel::Sd1,
+                model_name: LoraModelName::KnittedStyle2,
+            },
+            weight: 1.0,
+        });
+
+        self.batch.graph.edges = (*Lazy::force(&KNITTED_EDGES)).clone();
+
+        self.set_resolution(768, 1152);
+        self.ensure_prompt_contains("knittedstyle");
+        self.set_negative_prompt("");
 
         self
     }
@@ -369,6 +397,11 @@ struct Nodes {
         skip_serializing_if = "Option::is_none"
     )]
     lora_loader_lego: Option<LoraLoader>,
+    #[serde(
+        rename = "lora_loader_knittedstyle2",
+        skip_serializing_if = "Option::is_none"
+    )]
+    lora_loader_knittedstyle2: Option<LoraLoader>,
     linear_ui_output: LinearUiOutput,
 }
 
@@ -494,6 +527,9 @@ enum LoraModelName {
     /// Sdxl, requires "LEGO" in prompt
     #[serde(rename = "lego_v2.0_XL_32")]
     Lego,
+    /// Required "knittedstyle" in prompt
+    #[serde(rename = "knittedstyle2")]
+    KnittedStyle2,
 }
 
 #[derive(Clone, Copy, Debug, Serialize)]
@@ -671,6 +707,8 @@ enum EdgeNodeId {
     EpicRealLife,
     #[serde(rename = "lora_loader_lego_v2_0_XL_32")]
     Lego,
+    #[serde(rename = "lora_loader_knittedstyle2")]
+    Knit,
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]

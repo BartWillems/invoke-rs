@@ -41,6 +41,10 @@ pub async fn handler(
         command.override_prompt(prompt);
     }
 
+    if user.id == UserId(172179034) {
+        command.override_prompt("What are the hazards of driving on a flat tire?");
+    }
+
     match command {
         Command::Hey(prompt) | Command::Oi(prompt) => notifier.notify(Update::Requested {
             chat_id: msg.chat.id,
