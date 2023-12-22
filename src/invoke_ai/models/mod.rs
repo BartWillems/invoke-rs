@@ -20,15 +20,21 @@ static GIGACHAD_EDGES: Lazy<Vec<Edge>> = Lazy::new(|| {
 });
 
 static ANIME_EDGES: Lazy<Vec<Edge>> = Lazy::new(|| {
-    let gigachad = include_str!("edges/anime.json");
+    let edges = include_str!("edges/anime.json");
 
-    serde_json::from_str::<Vec<Edge>>(gigachad).unwrap()
+    serde_json::from_str::<Vec<Edge>>(edges).unwrap()
 });
 
 static DEFAULT_EDGES: Lazy<Vec<Edge>> = Lazy::new(|| {
-    let gigachad = include_str!("edges/default.json");
+    let edges = include_str!("edges/default.json");
 
-    serde_json::from_str::<Vec<Edge>>(gigachad).unwrap()
+    serde_json::from_str::<Vec<Edge>>(edges).unwrap()
+});
+
+static DEFAULT_OPEN_DALL_E_EDGES: Lazy<Vec<Edge>> = Lazy::new(|| {
+    let edges = include_str!("edges/default_opendalle.json");
+
+    serde_json::from_str::<Vec<Edge>>(edges).unwrap()
 });
 
 static LEGO_EDGES: Lazy<Vec<Edge>> = Lazy::new(|| {
@@ -42,6 +48,8 @@ static KNITTED_EDGES: Lazy<Vec<Edge>> = Lazy::new(|| {
 
     serde_json::from_str::<Vec<Edge>>(lego).unwrap()
 });
+
+const NEGATIVE_PROMPT: &str = "bad quality, bad anatomy, worst quality, low quality, low resolutions, extra fingers, blur, blurry, ugly, wrongs proportions, watermark, image artifacts, lowres, ugly, jpeg artifacts, deformed, noisy image";
 
 /// Identifier used to link requests to completed images
 #[derive(Clone, Copy, Debug, Deserialize, Hash, Eq, PartialEq)]
@@ -60,6 +68,7 @@ impl From<String> for Enqueue {
 }
 
 impl Enqueue {
+    // TODO: make an sdl and sdxl variant
     pub fn from_prompt(input: impl Into<String>) -> Self {
         let input = input.into();
 
@@ -74,23 +83,20 @@ impl Enqueue {
                 graph: Graph {
                     id: GraphId::TextToImageGraph,
                     nodes: Nodes {
-                        model_loader: ModelLoaderVariants::default(),
-                        clip_skip: Some(ClipSkip {
-                            typ: "clip_skip",
-                            id: "clip_skip",
-                            skipped_layers: 0,
-                            is_intermediate: true,
-                        }),
+                        model_loader: ModelLoaderVariants::open_dall_e(),
+                        clip_skip: None,
                         positive_conditioning: PositiveConditioning {
-                            typ: "compel",
+                            typ: "sdxl_compel_prompt",
                             id: "positive_conditioning",
                             prompt: input.clone(),
+                            style: Some(format!("{input} very detailed, hd")),
                             is_intermediate: true,
                         },
                         negative_conditioning: NegativeConditioning {
-                            typ: "compel",
+                            typ: "sdxl_compel_prompt",
                             id: "negative_conditioning",
-                            prompt: "bad anatomy, low quality, lowres".into(),
+                            prompt: NEGATIVE_PROMPT,
+                            style: NEGATIVE_PROMPT,
                             is_intermediate: true,
                         },
                         noise: Noise {
@@ -98,18 +104,18 @@ impl Enqueue {
                             id: "noise",
                             seed: noise_seed,
                             is_intermediate: true,
-                            width: 512,
-                            height: 512,
+                            width: 768,
+                            height: 768,
                             use_cpu: true,
                         },
-                        denoise_latents: DenoiseLatentsVariants::DenoiseLatents {
+                        denoise_latents: DenoiseLatentsVariants::SdxlDenoiseLatents {
                             content: DenoiseLatents {
                                 typ: "denoise_latents",
-                                id: "denoise_latents",
+                                id: "sdxl_denoise_latents",
                                 is_intermediate: true,
                                 cfg_scale: 7.5,
                                 scheduler: "dpmpp_sde_k",
-                                steps: NonZeroU8::try_from(30).unwrap(),
+                                steps: 30.try_into().unwrap(),
                                 denoising_start: 0,
                                 denoising_end: 1,
                             },
@@ -125,26 +131,20 @@ impl Enqueue {
                             id: "core_metadata",
                             generation_mode: "txt2img",
                             cfg_scale: 7.5,
-                            width: 512,
-                            height: 512,
+                            width: 768,
+                            height: 768,
                             positive_prompt: input,
-                            negative_prompt: "bad anatomy, low quality, lowres".into(),
+                            negative_prompt: NEGATIVE_PROMPT,
                             model: Model {
-                                model_name: ModelName::AZovyaPhotorealV2,
-                                base_model: BaseModel::Sd1,
+                                model_name: ModelName::OpenDalleV1_1,
+                                base_model: BaseModel::Sdxl,
                                 model_type: ModelType::Main,
                             },
                             steps: NonZeroU8::try_from(30).unwrap(),
                             rand_device: "cpu",
                             scheduler: "dpmpp_sde_k",
                             controlnets: Vec::new(),
-                            loras: vec![MetadataLora {
-                                lora: Lora {
-                                    base_model: BaseModel::Sd1,
-                                    model_name: LoraModelName::EpicRealLife,
-                                },
-                                weight: 0.75,
-                            }],
+                            loras: Vec::new(),
                             ip_adapters: Vec::new(),
                             clip_skip: 0,
                         },
@@ -154,21 +154,12 @@ impl Enqueue {
                             is_intermediate: false,
                             use_cache: false,
                         },
-                        lora_loader_epic_real_life: Some(LoraLoader {
-                            id: "lora_loader_epiCRealLife",
-                            typ: "lora_loader",
-                            is_intermediate: true,
-                            lora: Lora {
-                                base_model: BaseModel::Sd1,
-                                model_name: LoraModelName::EpicRealLife,
-                            },
-                            weight: 0.75,
-                        }),
+                        lora_loader_epic_real_life: None,
                         lora_loader_gigachad: None,
                         lora_loader_lego: None,
                         lora_loader_knittedstyle2: None,
                     },
-                    edges: (*Lazy::force(&DEFAULT_EDGES)).clone(),
+                    edges: (*Lazy::force(&DEFAULT_OPEN_DALL_E_EDGES)).clone(),
                 },
                 runs: 1,
                 data: vec![vec![
@@ -205,17 +196,33 @@ impl Enqueue {
         }
     }
 
-    fn set_negative_prompt<T: Into<String> + Clone>(&mut self, prompt: T) {
-        self.batch.graph.nodes.negative_conditioning.prompt = prompt.clone().into();
-        self.batch.graph.nodes.core_metadata.negative_prompt = prompt.into();
+    fn set_negative_prompt(&mut self, prompt: &'static str) {
+        self.batch.graph.nodes.negative_conditioning.prompt = prompt;
+        self.batch.graph.nodes.core_metadata.negative_prompt = prompt;
     }
 
     pub fn drawing(mut self) -> Self {
         let model = ModelName::ChildrensStoriesV1SemiReal;
         let loader = ModelLoader::sd1_with_model(model);
 
+        self.batch.graph.nodes.lora_loader_epic_real_life = Some(LoraLoader {
+            id: "lora_loader_epiCRealLife",
+            typ: "lora_loader",
+            is_intermediate: true,
+            lora: Lora {
+                base_model: BaseModel::Sd1,
+                model_name: LoraModelName::EpicRealLife,
+            },
+            weight: 0.75,
+        });
+
+        self.batch.graph.nodes.denoise_latents = DenoiseLatentsVariants::sdl();
+        self.batch.graph.nodes.positive_conditioning.typ = "compel";
+        self.batch.graph.nodes.negative_conditioning.typ = "compel";
+        self.batch.graph.nodes.clip_skip = Some(ClipSkip::default());
         self.batch.graph.nodes.model_loader = ModelLoaderVariants::from(loader);
         self.batch.graph.nodes.core_metadata.model.model_name = model;
+        self.batch.graph.edges = (*Lazy::force(&DEFAULT_EDGES)).clone();
         self
     }
 
@@ -241,6 +248,19 @@ impl Enqueue {
             weight: 1.0,
         });
 
+        self.batch.graph.nodes.lora_loader_epic_real_life = Some(LoraLoader {
+            id: "lora_loader_epiCRealLife",
+            typ: "lora_loader",
+            is_intermediate: true,
+            lora: Lora {
+                base_model: BaseModel::Sd1,
+                model_name: LoraModelName::EpicRealLife,
+            },
+            weight: 0.75,
+        });
+
+        self.batch.graph.nodes.denoise_latents = DenoiseLatentsVariants::sdl();
+
         self.batch
             .graph
             .nodes
@@ -248,6 +268,9 @@ impl Enqueue {
             .loras
             .push(MetadataLora { lora, weight: 1.0 });
 
+        self.batch.graph.nodes.positive_conditioning.typ = "compel";
+        self.batch.graph.nodes.negative_conditioning.typ = "compel";
+        self.batch.graph.nodes.clip_skip = Some(ClipSkip::default());
         self.batch.graph.edges = (*Lazy::force(&GIGACHAD_EDGES)).clone();
 
         self
@@ -257,6 +280,21 @@ impl Enqueue {
         let model = ModelName::CounterfeitV30;
         let loader = ModelLoader::sd1_with_model(model);
 
+        self.batch.graph.nodes.lora_loader_epic_real_life = Some(LoraLoader {
+            id: "lora_loader_epiCRealLife",
+            typ: "lora_loader",
+            is_intermediate: true,
+            lora: Lora {
+                base_model: BaseModel::Sd1,
+                model_name: LoraModelName::EpicRealLife,
+            },
+            weight: 0.75,
+        });
+
+        self.batch.graph.nodes.denoise_latents = DenoiseLatentsVariants::sdl();
+        self.batch.graph.nodes.positive_conditioning.typ = "compel";
+        self.batch.graph.nodes.negative_conditioning.typ = "compel";
+        self.batch.graph.nodes.clip_skip = Some(ClipSkip::default());
         self.batch.graph.nodes.model_loader = ModelLoaderVariants::from(loader);
         self.batch.graph.nodes.core_metadata.model.model_name = model;
         self.batch.graph.edges = (*Lazy::force(&ANIME_EDGES)).clone();
@@ -338,6 +376,11 @@ impl Enqueue {
             weight: 1.0,
         });
 
+        self.batch.graph.nodes.model_loader = ModelLoaderVariants::default();
+        self.batch.graph.nodes.denoise_latents = DenoiseLatentsVariants::sdl();
+        self.batch.graph.nodes.positive_conditioning.typ = "compel";
+        self.batch.graph.nodes.negative_conditioning.typ = "compel";
+        self.batch.graph.nodes.clip_skip = Some(ClipSkip::default());
         self.batch.graph.edges = (*Lazy::force(&KNITTED_EDGES)).clone();
 
         self.set_resolution(768, 1152);
@@ -416,6 +459,23 @@ enum ModelLoaderVariants {
         #[serde(flatten)]
         loader: ModelLoader,
     },
+}
+
+impl ModelLoaderVariants {
+    fn open_dall_e() -> Self {
+        Self::SdxlModelLoader {
+            loader: ModelLoader {
+                typ: "sdxl_model_loader",
+                id: "sdxl_model_loader",
+                is_intermediate: true,
+                model: Model {
+                    model_name: ModelName::OpenDalleV1_1,
+                    base_model: BaseModel::Sdxl,
+                    model_type: ModelType::Main,
+                },
+            },
+        }
+    }
 }
 
 impl Default for ModelLoaderVariants {
@@ -516,8 +576,13 @@ enum ModelName {
     /// Sdxl Model
     #[serde(rename = "stable-diffusion-xl-base-1-0")]
     StableDiffusionXlBase1,
+
+    // Sdxl OpenDalle
+    #[serde(rename = "opendallev11_v11")]
+    OpenDalleV1_1,
 }
 
+#[allow(unused)]
 #[derive(Clone, Copy, Debug, Serialize)]
 enum LoraModelName {
     #[serde(rename = "epiCRealLife")]
@@ -556,12 +621,24 @@ struct ClipSkip {
     is_intermediate: bool,
 }
 
+impl Default for ClipSkip {
+    fn default() -> Self {
+        Self {
+            typ: "clip_skip",
+            id: "clip_skip",
+            skipped_layers: 0,
+            is_intermediate: true,
+        }
+    }
+}
+
 #[derive(Debug, Serialize)]
 struct PositiveConditioning {
     #[serde(rename = "type")]
     typ: &'static str,
     id: &'static str,
     prompt: String,
+    style: Option<String>,
     is_intermediate: bool,
 }
 
@@ -570,7 +647,8 @@ struct NegativeConditioning {
     #[serde(rename = "type")]
     typ: &'static str,
     id: &'static str,
-    prompt: String,
+    prompt: &'static str,
+    style: &'static str,
     is_intermediate: bool,
 }
 
@@ -597,6 +675,23 @@ enum DenoiseLatentsVariants {
         #[serde(flatten)]
         content: DenoiseLatents,
     },
+}
+
+impl DenoiseLatentsVariants {
+    fn sdl() -> Self {
+        Self::DenoiseLatents {
+            content: DenoiseLatents {
+                typ: "denoise_latents",
+                id: "denoise_latents",
+                is_intermediate: true,
+                cfg_scale: 7.5,
+                scheduler: "dpmpp_sde_k",
+                steps: 30.try_into().unwrap(),
+                denoising_start: 0,
+                denoising_end: 1,
+            },
+        }
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -631,7 +726,7 @@ struct CoreMetadata {
     height: usize,
     width: usize,
     positive_prompt: String,
-    negative_prompt: String,
+    negative_prompt: &'static str,
     model: Model,
     steps: NonZeroU8,
     rand_device: &'static str,
@@ -785,8 +880,8 @@ mod tests {
         use std::fs::File;
         use std::io::prelude::*;
 
-        let lego = Enqueue::from_prompt("random prompt").lego();
-        let json = serde_json::to_string_pretty(&lego).unwrap();
+        let enqueue = Enqueue::from_prompt("random prompt");
+        let json = serde_json::to_string_pretty(&enqueue).unwrap();
 
         let mut file = File::create("_output.json").unwrap();
         file.write_all(json.as_bytes()).unwrap();

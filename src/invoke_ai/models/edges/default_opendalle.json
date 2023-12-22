@@ -1,0 +1,122 @@
+[
+    {
+        "source": {
+            "node_id": "sdxl_model_loader",
+            "field": "unet"
+        },
+        "destination": {
+            "node_id": "sdxl_denoise_latents",
+            "field": "unet"
+        }
+    },
+    {
+        "source": {
+            "node_id": "sdxl_model_loader",
+            "field": "clip"
+        },
+        "destination": {
+            "node_id": "positive_conditioning",
+            "field": "clip"
+        }
+    },
+    {
+        "source": {
+            "node_id": "sdxl_model_loader",
+            "field": "clip2"
+        },
+        "destination": {
+            "node_id": "positive_conditioning",
+            "field": "clip2"
+        }
+    },
+    {
+        "source": {
+            "node_id": "sdxl_model_loader",
+            "field": "clip"
+        },
+        "destination": {
+            "node_id": "negative_conditioning",
+            "field": "clip"
+        }
+    },
+    {
+        "source": {
+            "node_id": "sdxl_model_loader",
+            "field": "clip2"
+        },
+        "destination": {
+            "node_id": "negative_conditioning",
+            "field": "clip2"
+        }
+    },
+    {
+        "source": {
+            "node_id": "positive_conditioning",
+            "field": "conditioning"
+        },
+        "destination": {
+            "node_id": "sdxl_denoise_latents",
+            "field": "positive_conditioning"
+        }
+    },
+    {
+        "source": {
+            "node_id": "negative_conditioning",
+            "field": "conditioning"
+        },
+        "destination": {
+            "node_id": "sdxl_denoise_latents",
+            "field": "negative_conditioning"
+        }
+    },
+    {
+        "source": {
+            "node_id": "noise",
+            "field": "noise"
+        },
+        "destination": {
+            "node_id": "sdxl_denoise_latents",
+            "field": "noise"
+        }
+    },
+    {
+        "source": {
+            "node_id": "sdxl_denoise_latents",
+            "field": "latents"
+        },
+        "destination": {
+            "node_id": "latents_to_image",
+            "field": "latents"
+        }
+    },
+    {
+        "source": {
+            "node_id": "core_metadata",
+            "field": "metadata"
+        },
+        "destination": {
+            "node_id": "latents_to_image",
+            "field": "metadata"
+        }
+    },
+    {
+        "source": {
+            "node_id": "sdxl_model_loader",
+            "field": "vae"
+        },
+        "destination": {
+            "node_id": "latents_to_image",
+            "field": "vae"
+        }
+    },
+    {
+        "source": {
+            "node_id": "latents_to_image",
+            "field": "image"
+        },
+        "destination": {
+            "node_id": "linear_ui_output",
+            "field": "image"
+        }
+    }
+]
