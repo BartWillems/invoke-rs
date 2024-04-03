@@ -3,6 +3,7 @@ FROM rust:1.77 as builder
 WORKDIR /usr/src/invoke-rs
 
 COPY Cargo.toml Cargo.lock ./
+COPY migrations ./migrations
 COPY src ./src
 
 RUN cargo build --release
