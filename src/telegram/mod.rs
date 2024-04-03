@@ -4,6 +4,7 @@ use teloxide::types::UserId;
 
 use crate::handler::invoke;
 use crate::handler::local;
+use crate::handler::Store;
 
 mod admin;
 mod invoke_ai;
@@ -19,6 +20,7 @@ pub fn handler(
     invoke_notifier: invoke::Notifier,
     local_notifier: local::Notifier,
     cfg: Config,
+    store: Store,
 ) -> Dispatcher<Bot, teloxide::RequestError, teloxide::dispatching::DefaultKey> {
     let overrides = admin::Overrides::default();
 
@@ -43,15 +45,27 @@ pub fn handler(
             dptree::entry()
                 .filter_command::<local_ai::Command>()
                 .endpoint(local_ai::handler),
-        );
+        )
+        .branch(dptree::entry().endpoint(store_message));
 
     Dispatcher::builder(bot, handler)
         .dependencies(dptree::deps![
             invoke_notifier,
             local_notifier,
             overrides,
-            cfg
+            cfg,
+            store
         ])
         .default_handler(|_| async {})
         .build()
+}
+
+async fn store_message(msg: Message, store: Store) -> Result<(), teloxide::RequestError> {
+    store
+        .store_message(msg)
+        .await
+        .inspect_err(|err| log::error!("failed to store message: {err}"))
+        .ok();
+
+    Ok(())
 }

@@ -5,6 +5,9 @@ use teloxide::{types::UserId, Bot};
 
 pub mod invoke;
 pub mod local;
+pub mod store;
+
+pub use store::Store;
 
 #[derive(Debug, Deserialize, PartialEq, Eq)]
 pub struct Config {
@@ -13,6 +16,7 @@ pub struct Config {
     teloxide_token: String,
     telegram_admin_user_id: Option<UserId>,
     max_in_progress: Option<NonZeroUsize>,
+    sqlite_path: String,
 }
 
 pub struct Handler;
@@ -25,6 +29,7 @@ impl Handler {
             teloxide_token,
             telegram_admin_user_id,
             max_in_progress,
+            sqlite_path,
         } = config;
 
         let bot = Bot::new(teloxide_token);
@@ -50,6 +55,8 @@ impl Handler {
             http_client,
         )?;
 
+        let store = Store::new(&sqlite_path).await?;
+
         let mut telegram = crate::telegram::handler(
             bot,
             invoke.notifier(),
@@ -57,6 +64,7 @@ impl Handler {
             crate::telegram::Config {
                 admin_id: telegram_admin_user_id,
             },
+            store,
         );
 
         log::info!("Starting all handlers...");

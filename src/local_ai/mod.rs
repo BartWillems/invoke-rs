@@ -2,7 +2,9 @@ use crate::handler::local::{Identifier, Notifier, Update};
 use models::{Request, Response};
 use std::sync::Arc;
 
-mod models;
+pub mod models;
+
+pub use models::Model;
 
 #[derive(Clone)]
 pub struct LocalAI {
@@ -20,9 +22,15 @@ impl LocalAI {
         }
     }
 
-    pub async fn enqueue_request(&self, identifier: Identifier, prompt: String) {
+    pub async fn enqueue_request(&self, identifier: Identifier, prompt: String, model: Model) {
         let client = self.clone();
-        let request = Request::from_prompt(prompt);
+
+        let request = match model {
+            Model::Tldr => Request::tldr(prompt),
+            Model::GgmlGpt4all | Model::Llama => Request::from_prompt(prompt),
+        };
+
+        log::debug!("request: {request:?}");
 
         tokio::task::spawn(async move {
             match client.request(request).await {

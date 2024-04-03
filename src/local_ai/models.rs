@@ -22,6 +22,18 @@ impl Request {
             max_tokens: 750,
         }
     }
+
+    pub fn tldr(content: String) -> Self {
+        Self {
+            model: Model::Tldr,
+            messages: vec![Message {
+                role: Role::User,
+                content,
+            }],
+            temperature: 0.7,
+            max_tokens: 250,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -41,13 +53,16 @@ impl Response {
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
-enum Model {
+pub enum Model {
     /// CPU based
     #[serde(rename = "ggml-gpt4all-j.bin")]
     GgmlGpt4all,
     /// GPU based
     #[serde(rename = "llama")]
     Llama,
+    /// Also Lama in the background
+    #[serde(rename = "tldr")]
+    Tldr,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

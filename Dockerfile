@@ -1,4 +1,4 @@
-FROM rust:1.74 as builder
+FROM rust:1.77 as builder
 
 WORKDIR /usr/src/invoke-rs
 

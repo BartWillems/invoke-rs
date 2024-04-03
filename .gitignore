@@ -1,3 +1,4 @@
 /target
 .env
 _output.json
+sqlite.db*

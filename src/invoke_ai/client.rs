@@ -1,7 +1,9 @@
 use std::sync::{Arc, OnceLock};
 
 use futures_util::FutureExt;
-use rust_socketio::asynchronous::{Client as SocketClient, ClientBuilder as SocketClientBuilder};
+use rust_socketio::asynchronous::{
+    Client as SocketClient, ClientBuilder as SocketClientBuilder, ReconnectSettings,
+};
 use rust_socketio::Payload;
 use serde_json::json;
 use teloxide::types::{ChatId, MessageId, UserId};
@@ -47,24 +49,30 @@ impl InvokeAI {
         notifier: Notifier,
     ) -> Result<SocketClient, Error> {
         let url = Arc::new(url);
-        SocketClientBuilder::new(format!("{url}/ws/socket.io/"))
+
+        let reconnect_url = Arc::new(format!("{url}/ws/socket.io/"));
+
+        SocketClientBuilder::new(reconnect_url.as_str())
             .namespace("/")
             .on("invocation_complete", move |payload, _client| {
                 let notifier = notifier.clone();
                 let url = url.clone();
                 async move {
                     match payload {
-                        Payload::String(data) => {
-                            let invocation: InvocationComplete =
-                                match serde_json::from_str(data.as_str()) {
-                                    Ok(invocation) => invocation,
-                                    Err(error) => {
-                                        log::error!(
-                                        "Failed to parse SocketIO JSON: {error}, payload: {data}"
-                                    );
-                                        return;
-                                    }
-                                };
+                        Payload::Text(mut payload) => {
+                            let Some(value) = payload.pop() else {
+                                log::error!("empty payload array received");
+                                return;
+                            };
+
+                            let invocation: InvocationComplete = match serde_json::from_value(value)
+                            {
+                                Ok(invocation) => invocation,
+                                Err(error) => {
+                                    log::error!("Failed to parse SocketIO JSON: {error}");
+                                    return;
+                                }
+                            };
 
                             if invocation.still_in_progress() {
                                 notifier.notify(Update::Progress {
@@ -83,34 +91,47 @@ impl InvokeAI {
                                 None => log::debug!("missing image, unimportant update"),
                             }
                         }
-                        Payload::Binary(_) => {
-                            log::warn!("unexpected binary")
-                        }
+                        rest => log::warn!("unexpected data: {rest:?}"),
                     }
                 }
                 .boxed()
             })
             .on("invocation_error", |payload, _client| {
                 async move {
-                    let payload = match payload {
-                        Payload::String(payload) => payload,
-                        Payload::Binary(_) => {
-                            log::error!("unexpected binary in invocation-error");
+                    let error = match payload {
+                        Payload::Text(mut payload) => payload.pop(),
+                        rest => {
+                            log::warn!("unexpected data in invocation-error: {rest:?}");
                             return;
                         }
                     };
 
-                    let invocation_error = match serde_json::from_str::<InvocationError>(&payload) {
+                    let Some(error) = error else {
+                        log::warn!("empty error received");
+                        return;
+                    };
+
+                    let invocation_error = match serde_json::from_value::<InvocationError>(error) {
                         Ok(error) => error,
                         Err(error) => {
                             log::error!(
-                                "unable to parse invocation error: {error}, payload = {payload}"
+                                "unable to parse invocation error: {error}, payload = {error}"
                             );
                             return;
                         }
                     };
 
                     log::error!("invoaction error: {invocation_error:?}");
+                }
+                .boxed()
+            })
+            .on_reconnect(move || {
+                let url = reconnect_url.clone();
+                async move {
+                    let mut settings = ReconnectSettings::new();
+                    settings.address(format!("{url}/ws/socket.io/"));
+                    settings.auth(json!({"queue_id": "default"}));
+                    settings
                 }
                 .boxed()
             })

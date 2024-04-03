@@ -52,6 +52,7 @@ pub enum Update {
         user_id: UserId,
         message_id: MessageId,
         prompt: String,
+        model: crate::local_ai::Model,
     },
     Finished {
         identifier: Identifier,
@@ -167,6 +168,7 @@ impl Handler {
                 user_id,
                 message_id,
                 prompt,
+                model,
             } => {
                 log::info!(
                     "Received request, Prompt({prompt}), ChatId({chat_id}), UserId({user_id})",
@@ -191,6 +193,7 @@ impl Handler {
                             message_id,
                         },
                         prompt,
+                        model,
                     )
                     .await;
             }
