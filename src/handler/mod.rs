@@ -1,7 +1,4 @@
-use std::num::NonZeroUsize;
-
-use serde::Deserialize;
-use teloxide::{types::UserId, Bot};
+use teloxide::Bot;
 
 pub mod invoke;
 pub mod local;
@@ -9,27 +6,22 @@ pub mod store;
 
 pub use store::Store;
 
-#[derive(Debug, Deserialize, PartialEq, Eq)]
-pub struct Config {
-    invoke_ai_url: String,
-    local_ai_url: String,
-    teloxide_token: String,
-    telegram_admin_user_id: Option<UserId>,
-    max_in_progress: Option<NonZeroUsize>,
-    sqlite_path: String,
-}
+use crate::local_ai::Prompts;
+use crate::utils::languages::LanguageDetector;
+use crate::AppConfig;
 
 pub struct Handler;
 
 impl Handler {
-    pub async fn dispatch(config: Config) -> anyhow::Result<()> {
-        let Config {
+    pub async fn dispatch(config: AppConfig) -> anyhow::Result<()> {
+        let AppConfig {
             invoke_ai_url,
             local_ai_url,
             teloxide_token,
             telegram_admin_user_id,
             max_in_progress,
             sqlite_path,
+            enable_french_detection,
         } = config;
 
         let bot = Bot::new(teloxide_token);
@@ -46,6 +38,8 @@ impl Handler {
         )
         .await?;
 
+        let prompts = Prompts::default();
+
         let local = local::Handler::try_new(
             local::Config {
                 local_ai_url,
@@ -53,19 +47,22 @@ impl Handler {
             },
             bot.clone(),
             http_client,
+            prompts.clone(),
         )?;
 
-        let store = Store::new(&sqlite_path).await?;
+        let store = Store::new(&sqlite_path, bot.clone()).await?;
 
-        let mut telegram = crate::telegram::handler(
-            bot,
-            invoke.notifier(),
-            local.notifier(),
-            crate::telegram::Config {
+        let mut telegram = crate::telegram::handler(crate::telegram::Context {
+            cfg: crate::telegram::Config {
                 admin_id: telegram_admin_user_id,
             },
+            bot,
             store,
-        );
+            invoke_notifier: invoke.notifier(),
+            local_notifier: local.notifier(),
+            language: LanguageDetector::new(enable_french_detection),
+            prompts,
+        });
 
         log::info!("Starting all handlers...");
         futures::future::join3(invoke.start(), local.start(), telegram.dispatch()).await;

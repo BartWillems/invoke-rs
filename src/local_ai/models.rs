@@ -11,13 +11,19 @@ pub struct Request {
 }
 
 impl Request {
-    pub fn from_prompt(prompt: String) -> Self {
+    pub fn from_prompt(system: String, user: String) -> Self {
         Self {
             model: Model::Llama,
-            messages: vec![Message {
-                role: Role::User,
-                content: prompt,
-            }],
+            messages: vec![
+                Message {
+                    role: Role::System,
+                    content: system,
+                },
+                Message {
+                    role: Role::User,
+                    content: user,
+                },
+            ],
             temperature: 0.7,
             max_tokens: 750,
         }
@@ -31,7 +37,7 @@ impl Request {
                 content,
             }],
             temperature: 0.7,
-            max_tokens: 250,
+            max_tokens: 500,
         }
     }
 }
@@ -46,9 +52,13 @@ pub struct Response {
 
 impl Response {
     pub fn message(&self) -> Option<String> {
-        self.choices
-            .first()
-            .map(|choice| choice.message.content.clone())
+        self.choices.first().map(|choice| {
+            choice
+                .message
+                .content
+                .replace("<|assistant|>", "")
+                .replace("<|end|>", "")
+        })
     }
 }
 
@@ -76,6 +86,7 @@ pub struct Message {
 enum Role {
     User,
     Assistant,
+    System,
 }
 
 #[derive(Clone, Debug, Deserialize)]

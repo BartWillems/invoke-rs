@@ -3,22 +3,31 @@ use models::{Request, Response};
 use std::sync::Arc;
 
 pub mod models;
+pub mod prompts;
 
 pub use models::Model;
+pub use prompts::Prompts;
 
 #[derive(Clone)]
 pub struct LocalAI {
     api_uri: Arc<String>,
     http_client: reqwest::Client,
     notifier: Notifier,
+    prompts: Prompts,
 }
 
 impl LocalAI {
-    pub fn new(api_uri: String, notifier: Notifier, http_client: reqwest::Client) -> Self {
+    pub fn new(
+        api_uri: String,
+        notifier: Notifier,
+        http_client: reqwest::Client,
+        prompts: Prompts,
+    ) -> Self {
         Self {
             api_uri: Arc::new(api_uri),
             http_client,
             notifier,
+            prompts,
         }
     }
 
@@ -27,7 +36,9 @@ impl LocalAI {
 
         let request = match model {
             Model::Tldr => Request::tldr(prompt),
-            Model::GgmlGpt4all | Model::Llama => Request::from_prompt(prompt),
+            Model::GgmlGpt4all | Model::Llama => {
+                Request::from_prompt(self.prompts.get_prompt().await, prompt)
+            }
         };
 
         log::debug!("request: {request:?}");

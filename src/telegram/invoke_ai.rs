@@ -1,9 +1,8 @@
 use teloxide::{prelude::*, utils::command::BotCommands};
 
-use crate::{
-    handler::invoke::{Notifier, Update},
-    invoke_ai::models::Enqueue,
-};
+use crate::{handler::invoke::Update, invoke_ai::models::Enqueue};
+
+use super::Context;
 
 #[derive(BotCommands, Clone, Debug)]
 #[command(
@@ -39,7 +38,7 @@ impl Command {
 }
 
 pub async fn handler(
-    notifier: Notifier,
+    ctx: Context,
     msg: Message,
     mut command: Command,
     overrides: super::admin::Overrides,
@@ -71,7 +70,7 @@ pub async fn handler(
         Command::Knit(prompt) => Enqueue::from_prompt(prompt).knit(),
     };
 
-    notifier.notify(Update::Requested {
+    ctx.invoke_notifier.notify(Update::Requested {
         enqueue: Box::new(enqueue),
         chat_id: msg.chat.id,
         user_id: user.id,

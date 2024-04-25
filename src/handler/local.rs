@@ -9,7 +9,7 @@ use teloxide::{
 };
 use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
 
-use crate::local_ai::LocalAI;
+use crate::local_ai::{LocalAI, Prompts};
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -107,7 +107,12 @@ pub struct Handler {
 
 impl Handler {
     /// Initiate the telegram bot and start listening for updates
-    pub fn try_new(config: Config, bot: Bot, http_client: reqwest::Client) -> Result<Self, Error> {
+    pub fn try_new(
+        config: Config,
+        bot: Bot,
+        http_client: reqwest::Client,
+        prompts: Prompts,
+    ) -> Result<Self, Error> {
         let Config {
             local_ai_url,
             max_in_progress,
@@ -116,7 +121,7 @@ impl Handler {
         let (sender, receiver) = mpsc::unbounded_channel::<Update>();
         let notifier = Notifier::from(sender);
 
-        let client = LocalAI::new(local_ai_url, notifier.clone(), http_client);
+        let client = LocalAI::new(local_ai_url, notifier.clone(), http_client, prompts);
 
         Ok(Self {
             client,

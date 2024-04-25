@@ -4,9 +4,10 @@ use teloxide::{
     macros::BotCommands,
     requests::Requester,
     types::{Message, User, UserId},
-    Bot,
 };
 use tokio::sync::RwLock;
+
+use super::Context;
 
 #[derive(BotCommands, Clone, Debug)]
 #[command(rename_rule = "lowercase", description = "Admin only commands")]
@@ -15,6 +16,12 @@ pub enum AdminCommands {
     Clown,
     #[command(description = "Remove the clowns from someone")]
     UnClown,
+    #[command(description = "set the LLM to drunk mode")]
+    DrunkLlm,
+    #[command(description = "revert the LLM prompt to default")]
+    DefaultLlm,
+    #[command(description = "Use a custom LLM system prompt")]
+    CustomLlm(String),
 }
 
 #[derive(Clone, Default)]
@@ -38,7 +45,7 @@ impl Overrides {
 }
 
 pub async fn handler(
-    bot: Bot,
+    ctx: Context,
     msg: Message,
     cmd: AdminCommands,
     overrides: Overrides,
@@ -65,7 +72,8 @@ pub async fn handler(
                 .set_override(target_user.id, "a silly homeless drunk clown")
                 .await;
 
-            bot.send_message(msg.chat.id, format!("{username} has been clowned"))
+            ctx.bot
+                .send_message(msg.chat.id, format!("{username} has been clowned"))
                 .await?;
         }
         AdminCommands::UnClown => {
@@ -86,8 +94,18 @@ pub async fn handler(
             );
             overrides.remove_override(target_user.id).await;
 
-            bot.send_message(msg.chat.id, format!("{username} has been unclowned"))
+            ctx.bot
+                .send_message(msg.chat.id, format!("{username} has been unclowned"))
                 .await?;
+        }
+        AdminCommands::DefaultLlm => {
+            ctx.prompts.reset().await;
+        }
+        AdminCommands::CustomLlm(prompt) => {
+            ctx.prompts.overwrite_prompt(prompt).await;
+        }
+        AdminCommands::DrunkLlm => {
+            ctx.prompts.overwrite_to_drunk().await;
         }
     };
 

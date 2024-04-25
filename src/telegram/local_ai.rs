@@ -1,8 +1,9 @@
 use teloxide::{prelude::*, utils::command::BotCommands};
 
-use crate::handler::local::{Notifier, Update};
-use crate::handler::Store;
+use crate::handler::local::Update;
 use crate::local_ai::Model;
+
+use super::Context;
 
 #[derive(BotCommands, Clone, Debug)]
 #[command(
@@ -26,12 +27,10 @@ impl Command {
 }
 
 pub async fn handler(
-    bot: Bot,
-    notifier: Notifier,
+    ctx: Context,
     msg: Message,
     mut command: Command,
     overrides: super::admin::Overrides,
-    store: Store,
 ) -> Result<(), teloxide::RequestError> {
     log::info!("Received command: {command:?}, Chat ID: {}", msg.chat.id);
 
@@ -52,29 +51,31 @@ pub async fn handler(
     }
 
     match command {
-        Command::Hey(prompt) | Command::Oi(prompt) => notifier.notify(Update::Requested {
-            chat_id: msg.chat.id,
-            user_id: user.id,
-            message_id: msg.id,
-            prompt,
-            model: Model::Llama,
-        }),
+        Command::Hey(prompt) | Command::Oi(prompt) => {
+            ctx.local_notifier.notify(Update::Requested {
+                chat_id: msg.chat.id,
+                user_id: user.id,
+                message_id: msg.id,
+                prompt,
+                model: Model::Llama,
+            })
+        }
         Command::Tldr => {
-            let chat_history = match store.chat_history(&bot, msg.chat.id).await {
+            let chat_history = match ctx.store.chat_history(msg.chat.id).await {
                 Ok(Some(history)) => history,
                 Ok(None) => {
-                    bot.send_message(msg.chat.id, "No chat content found. Please let me learn longer or adjust my permissions.")
+                    ctx.bot.send_message(msg.chat.id, "No chat content found. Please let me learn longer or adjust my permissions.")
                         .await?;
                     return Ok(());
                 }
                 Err(err) => {
                     log::error!("failed to fetch chat history: {err}");
-                    bot.send_message(msg.chat.id, "failure").await?;
+                    ctx.bot.send_message(msg.chat.id, "failure").await?;
                     return Ok(());
                 }
             };
 
-            notifier.notify(Update::Requested {
+            ctx.local_notifier.notify(Update::Requested {
                 chat_id: msg.chat.id,
                 user_id: user.id,
                 message_id: msg.id,
