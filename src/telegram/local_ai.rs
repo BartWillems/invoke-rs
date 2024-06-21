@@ -1,7 +1,6 @@
 use teloxide::{prelude::*, utils::command::BotCommands};
 
-use crate::handler::local::Update;
-use crate::local_ai::Model;
+use crate::handler::local::{Identifier, Update};
 
 use super::Context;
 
@@ -11,17 +10,13 @@ use super::Context;
     description = "These commands are supported:"
 )]
 pub enum Command {
-    Hey(String),
-    Oi(String),
-    Tldr,
+    Say(String),
 }
 
 impl Command {
     fn override_prompt(&mut self, prompt: impl ToString) {
         match self {
-            Command::Hey(_) => *self = Command::Hey(prompt.to_string()),
-            Command::Oi(_) => *self = Command::Oi(prompt.to_string()),
-            Command::Tldr => (),
+            Command::Say(_) => *self = Command::Say(prompt.to_string()),
         }
     }
 }
@@ -51,36 +46,23 @@ pub async fn handler(
     }
 
     match command {
-        Command::Hey(prompt) | Command::Oi(prompt) => {
-            ctx.local_notifier.notify(Update::Requested {
-                chat_id: msg.chat.id,
-                user_id: user.id,
-                message_id: msg.id,
-                prompt,
-                model: Model::Llama,
-            })
-        }
-        Command::Tldr => {
-            let chat_history = match ctx.store.chat_history(msg.chat.id).await {
-                Ok(Some(history)) => history,
-                Ok(None) => {
-                    ctx.bot.send_message(msg.chat.id, "No chat content found. Please let me learn longer or adjust my permissions.")
-                        .await?;
-                    return Ok(());
-                }
-                Err(err) => {
-                    log::error!("failed to fetch chat history: {err}");
-                    ctx.bot.send_message(msg.chat.id, "failure").await?;
-                    return Ok(());
-                }
-            };
+        Command::Say(prompt) => {
+            let prompt = msg
+                .reply_to_message()
+                .and_then(|message| message.text())
+                .map(ToString::to_string)
+                .unwrap_or(prompt);
 
-            ctx.local_notifier.notify(Update::Requested {
-                chat_id: msg.chat.id,
-                user_id: user.id,
-                message_id: msg.id,
-                prompt: chat_history,
-                model: Model::Tldr,
+            let language = ctx.language.detect_language(&prompt);
+
+            ctx.local_notifier.notify(Update::TtsRequest {
+                identifier: Identifier {
+                    chat_id: msg.chat.id,
+                    user_id: user.id,
+                    message_id: msg.id,
+                },
+                prompt,
+                language,
             })
         }
     };

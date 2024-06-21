@@ -11,6 +11,7 @@ use crate::utils::languages::LanguageDetector;
 pub mod admin;
 mod invoke_ai;
 mod local_ai;
+mod ollama;
 
 #[derive(Clone, Copy)]
 pub struct Config {
@@ -24,8 +25,23 @@ pub struct Context {
     pub store: Store,
     pub invoke_notifier: invoke::Notifier,
     pub local_notifier: local::Notifier,
+    pub ollama_notifier: crate::handler::ollama::Notifier,
     pub language: LanguageDetector,
     pub prompts: Prompts,
+}
+
+impl Context {
+    pub async fn quick_reply(&self, message: &Message, content: impl Into<String>) {
+        self.bot
+            .send_message(message.chat.id, content)
+            .reply_to_message_id(message.id)
+            .send()
+            .await
+            .inspect_err(|err| {
+                log::error!("failed to send message: {err}");
+            })
+            .ok();
+    }
 }
 
 pub fn handler(
@@ -40,7 +56,13 @@ pub fn handler(
                     .from()
                     .map(|user| user.id == admin_user_id)
                     .unwrap_or_default(),
-                None => false,
+                None => {
+                    tokio::task::spawn(async move {
+                        ctx.quick_reply(&msg, "this command is only available to administrators")
+                            .await;
+                    });
+                    false
+                }
             })
             .filter_command::<admin::AdminCommands>()
             .endpoint(admin::handler),
@@ -54,6 +76,11 @@ pub fn handler(
             dptree::entry()
                 .filter_command::<local_ai::Command>()
                 .endpoint(local_ai::handler),
+        )
+        .branch(
+            dptree::entry()
+                .filter_command::<ollama::Command>()
+                .endpoint(ollama::handler),
         )
         .branch(dptree::entry().endpoint(catch_all));
 
@@ -83,13 +110,7 @@ async fn detect_french(ctx: Context, msg: Message) {
     }
 
     if ctx.language.has_french(txt.to_string()) {
-        ctx.bot
-            .send_message(msg.chat.id, "wablieft?")
-            .reply_to_message_id(msg.id)
-            .send()
-            .await
-            .inspect_err(|err| log::error!("failed to respond wablieft: {err}"))
-            .ok();
+        ctx.quick_reply(&msg, "wablieft").await;
     }
 }
 

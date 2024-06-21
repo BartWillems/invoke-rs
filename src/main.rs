@@ -7,6 +7,7 @@ use teloxide::types::UserId;
 pub mod handler;
 pub mod invoke_ai;
 pub mod local_ai;
+pub mod ollama;
 pub mod telegram;
 pub mod utils;
 
@@ -14,6 +15,7 @@ pub mod utils;
 pub struct AppConfig {
     invoke_ai_url: String,
     local_ai_url: String,
+    ollama_url: String,
     teloxide_token: String,
     telegram_admin_user_id: Option<UserId>,
     max_in_progress: Option<NonZeroUsize>,

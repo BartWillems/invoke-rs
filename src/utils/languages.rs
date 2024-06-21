@@ -25,6 +25,13 @@ impl LanguageDetector {
         }
     }
 
+    /// Detects the language, defaults to English if none is found
+    pub fn detect_language(&self, text: &str) -> Language {
+        self.detector
+            .detect_language_of(text)
+            .unwrap_or(Language::English)
+    }
+
     pub fn has_french(&self, msg: String) -> bool {
         if !self.enabled.load(Ordering::Relaxed) {
             log::debug!("french detector disabled");

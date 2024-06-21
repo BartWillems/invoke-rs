@@ -1,13 +1,14 @@
 #![allow(unused)]
 
+use lingua::Language;
 use serde::{Deserialize, Serialize};
 
+/// Text generation request
 #[derive(Clone, Debug, Serialize)]
 pub struct Request {
-    model: Model,
-    messages: Vec<Message>,
-    temperature: f32,
-    max_tokens: usize,
+    pub model: Model,
+    pub messages: Vec<Message>,
+    pub temperature: f32,
 }
 
 impl Request {
@@ -25,7 +26,6 @@ impl Request {
                 },
             ],
             temperature: 0.7,
-            max_tokens: 750,
         }
     }
 
@@ -37,7 +37,6 @@ impl Request {
                 content,
             }],
             temperature: 0.7,
-            max_tokens: 500,
         }
     }
 }
@@ -77,13 +76,13 @@ pub enum Model {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Message {
-    role: Role,
-    content: String,
+    pub role: Role,
+    pub content: String,
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
-enum Role {
+pub enum Role {
     User,
     Assistant,
     System,
@@ -101,4 +100,45 @@ struct Usage {
     prompt_tokens: usize,
     completion_tokens: usize,
     total_tokens: usize,
+}
+
+/// Text to speech
+#[derive(Debug, Serialize)]
+pub struct TtsRequest {
+    model: TtsModel,
+    backend: TtsBackend,
+    input: String,
+}
+
+#[derive(Debug, Serialize)]
+pub enum TtsModel {
+    #[serde(rename = "en-us-libritts-high.onnx")]
+    EnUsLibritts,
+    #[serde(rename = "nl-nathalie-x-low.onnx")]
+    NlNathalie,
+}
+
+#[derive(Clone, Copy, Debug, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum TtsBackend {
+    Piper,
+}
+
+impl TtsRequest {
+    pub fn new(mut input: String, language: Language) -> Self {
+        let model = match language {
+            Language::Dutch => TtsModel::NlNathalie,
+            Language::English => TtsModel::EnUsLibritts,
+            Language::French => {
+                input = String::from("wablieft?");
+                TtsModel::NlNathalie
+            }
+        };
+
+        Self {
+            model,
+            backend: TtsBackend::Piper,
+            input,
+        }
+    }
 }

@@ -2,6 +2,7 @@ use teloxide::Bot;
 
 pub mod invoke;
 pub mod local;
+pub mod ollama;
 pub mod store;
 
 pub use store::Store;
@@ -18,6 +19,7 @@ impl Handler {
             invoke_ai_url,
             local_ai_url,
             teloxide_token,
+            ollama_url,
             telegram_admin_user_id,
             max_in_progress,
             sqlite_path,
@@ -46,8 +48,17 @@ impl Handler {
                 max_in_progress,
             },
             bot.clone(),
-            http_client,
+            http_client.clone(),
             prompts.clone(),
+        )?;
+
+        let ollama = ollama::Handler::try_new(
+            ollama::Config {
+                api_uri: ollama_url,
+                max_in_progress,
+            },
+            bot.clone(),
+            http_client,
         )?;
 
         let store = Store::new(&sqlite_path, bot.clone()).await?;
@@ -60,12 +71,19 @@ impl Handler {
             store,
             invoke_notifier: invoke.notifier(),
             local_notifier: local.notifier(),
+            ollama_notifier: ollama.notifier(),
             language: LanguageDetector::new(enable_french_detection),
             prompts,
         });
 
         log::info!("Starting all handlers...");
-        futures::future::join3(invoke.start(), local.start(), telegram.dispatch()).await;
+        futures::future::join4(
+            invoke.start(),
+            local.start(),
+            ollama.start(),
+            telegram.dispatch(),
+        )
+        .await;
 
         Ok(())
     }

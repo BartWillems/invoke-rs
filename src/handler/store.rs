@@ -56,7 +56,8 @@ impl UsernameProvider for Bot {
 }
 
 impl<U: UsernameProvider> Store<U> {
-    const MAX_CONEXT_SIZE: usize = 3790;
+    const MAX_CONEXT_SIZE: usize = 4000;
+    const PROMPT: &'static str = "The text below is a chat conversation. Each message is in the format of \"sender-name: message-content\". Respond only with a recap of what each person has said/done in the conversation. Always tag the users' usernames by prefixing an '@' before their name in your recap.";
 
     pub async fn new(url: &str, usernames: U) -> Result<Store<U>, anyhow::Error> {
         if !Sqlite::database_exists(url).await.unwrap_or(false) {
@@ -113,8 +114,10 @@ impl<U: UsernameProvider> Store<U> {
             return Ok(None);
         }
 
-        let mut context_size = 0;
+        let mut context_size = Self::PROMPT.len();
         let mut buffer = Vec::with_capacity(messages.len());
+
+        // buffer.push(Self::PROMPT.to_string());
 
         for (user_id, message) in messages
             .into_iter()
@@ -137,6 +140,8 @@ impl<U: UsernameProvider> Store<U> {
         }
 
         let mut chat_content = String::with_capacity(context_size);
+
+        writeln!(chat_content, "{}", Self::PROMPT)?;
 
         for line in buffer.into_iter().rev() {
             writeln!(chat_content, "{line}")?;

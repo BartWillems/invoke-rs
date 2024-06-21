@@ -1,16 +1,15 @@
 use std::{collections::HashMap, fmt, num::NonZeroUsize};
 
-use lingua::Language;
 use serde::Deserialize;
 use teloxide::{
-    payloads::{SendAudioSetters, SendMessageSetters},
+    payloads::SendMessageSetters,
     requests::{Request as RequestExt, Requester},
-    types::{ChatId, InputFile, MessageId, UserId},
+    types::{ChatId, MessageId, UserId},
     Bot,
 };
 use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
 
-use crate::local_ai::{self, LocalAI, Prompts};
+use crate::ollama::Ollama;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -24,7 +23,7 @@ pub enum Error {
 
 #[derive(Debug, Deserialize, PartialEq, Eq)]
 pub struct Config {
-    pub local_ai_url: String,
+    pub api_uri: String,
     pub max_in_progress: Option<NonZeroUsize>,
 }
 
@@ -46,33 +45,15 @@ impl fmt::Debug for Identifier {
     }
 }
 
-#[derive(Debug, Default)]
-pub enum ResponseVariant {
-    #[default]
-    None,
-    Text(String),
-    Audio(bytes::Bytes),
-}
-
 #[derive(Debug)]
 pub enum Update {
     Requested {
         identifier: Identifier,
         prompt: String,
-        model: crate::local_ai::Model,
-    },
-    TtsRequest {
-        identifier: Identifier,
-        prompt: String,
-        language: Language,
-    },
-    RawRequest {
-        identifier: Identifier,
-        request: local_ai::Request,
     },
     Finished {
         identifier: Identifier,
-        response: ResponseVariant,
+        response: String,
     },
     Failed {
         identifier: Identifier,
@@ -113,7 +94,7 @@ impl Notifier {
 }
 
 pub struct Handler {
-    client: LocalAI,
+    client: Ollama,
     bot: Bot,
     receiver: UnboundedReceiver<Update>,
     notifier: Notifier,
@@ -122,22 +103,21 @@ pub struct Handler {
 }
 
 impl Handler {
-    /// Initiate the telegram bot and start listening for updates
     pub fn try_new(
         config: Config,
         bot: Bot,
         http_client: reqwest::Client,
-        prompts: Prompts,
+        // prompts: Prompts,
     ) -> Result<Self, Error> {
         let Config {
-            local_ai_url,
+            api_uri,
             max_in_progress,
         } = config;
 
         let (sender, receiver) = mpsc::unbounded_channel::<Update>();
         let notifier = Notifier::from(sender);
 
-        let client = LocalAI::new(local_ai_url, notifier.clone(), http_client, prompts);
+        let client = Ollama::new(http_client, api_uri);
 
         Ok(Self {
             client,
@@ -154,7 +134,7 @@ impl Handler {
 
     /// Start handling new requests and LocalAI progress updates
     pub async fn start(mut self) {
-        log::info!("Starting local-ai handler");
+        log::info!("Starting ollama handler");
         let mut queue = Queue::default();
 
         while let Some(update) = self.receiver.recv().await {
@@ -184,11 +164,7 @@ impl Handler {
 
     async fn handle(&self, update: Update, queue: &mut Queue) -> Result<Response, Error> {
         match update {
-            Update::Requested {
-                identifier,
-                prompt,
-                model,
-            } => {
+            Update::Requested { identifier, prompt } => {
                 log::info!(
                     "Received request, Prompt({prompt}), ChatId({}), UserId({})",
                     identifier.chat_id,
@@ -206,52 +182,23 @@ impl Handler {
                     });
                 }
 
-                self.client.enqueue_request(identifier, prompt, model).await;
-            }
+                let client = self.client.clone();
+                let notifier = self.notifier();
 
-            Update::TtsRequest {
-                identifier,
-                prompt,
-                language,
-            } => {
-                log::info!(
-                    "Received TTS request, Prompt({prompt}), ChatId({}), UserId({})",
-                    identifier.chat_id,
-                    identifier.user_id
-                );
-
-                let in_progress = queue.increment_user_count(identifier.user_id);
-
-                if in_progress > self.max_in_progress.get() {
-                    queue.decrement_user_count(identifier.user_id);
-                    return Ok(Response::Message {
-                        chat_id: identifier.chat_id,
-                        message_id: identifier.message_id,
-                        message: "You already have too many prompts in progress".into(),
-                    });
-                }
-
-                self.client
-                    .enqueue_tts_request(identifier, prompt, language)
-                    .await;
-            }
-
-            Update::RawRequest {
-                identifier,
-                request,
-            } => {
-                let in_progress = queue.increment_user_count(identifier.user_id);
-
-                if in_progress > self.max_in_progress.get() {
-                    queue.decrement_user_count(identifier.user_id);
-                    return Ok(Response::Message {
-                        chat_id: identifier.chat_id,
-                        message_id: identifier.message_id,
-                        message: "You already have too many prompts in progress".into(),
-                    });
-                }
-
-                self.client.enqueue_raw_request(identifier, request);
+                tokio::task::spawn(async move {
+                    match client.request_completion(prompt).await {
+                        Ok(response) => {
+                            notifier.notify(Update::Finished {
+                                identifier,
+                                response: response.response,
+                            });
+                        }
+                        Err(error) => notifier.notify(Update::Failed {
+                            identifier,
+                            reason: error.to_string(),
+                        }),
+                    };
+                });
             }
 
             Update::Finished {
@@ -262,32 +209,11 @@ impl Handler {
 
                 queue.decrement_user_count(identifier.user_id);
 
-                match response {
-                    ResponseVariant::None => {
-                        self.bot
-                            .send_message(
-                                identifier.chat_id,
-                                String::from("Failed to generate a response"),
-                            )
-                            .reply_to_message_id(identifier.message_id)
-                            .send()
-                            .await?
-                    }
-                    ResponseVariant::Text(text) => {
-                        self.bot
-                            .send_message(identifier.chat_id, text)
-                            .reply_to_message_id(identifier.message_id)
-                            .send()
-                            .await?
-                    }
-                    ResponseVariant::Audio(audio) => {
-                        self.bot
-                            .send_audio(identifier.chat_id, InputFile::memory(audio))
-                            .reply_to_message_id(identifier.message_id)
-                            .send()
-                            .await?
-                    }
-                };
+                self.bot
+                    .send_message(identifier.chat_id, response)
+                    .reply_to_message_id(identifier.message_id)
+                    .send()
+                    .await?;
             }
 
             Update::Failed { identifier, reason } => {
