@@ -8,6 +8,7 @@ pub mod handler;
 pub mod invoke_ai;
 pub mod local_ai;
 pub mod ollama;
+pub mod store;
 pub mod telegram;
 pub mod utils;
 
@@ -22,6 +23,9 @@ pub struct AppConfig {
     sqlite_path: String,
     #[serde(default)]
     enable_french_detection: bool,
+    #[serde(default)]
+    ollama_model: ollama::Model,
+    searxng_url: String,
 }
 
 #[tokio::main]

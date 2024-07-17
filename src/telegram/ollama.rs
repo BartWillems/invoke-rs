@@ -1,9 +1,10 @@
-use std::str::FromStr;
-
 use teloxide::{prelude::*, utils::command::BotCommands};
 use url::Url;
 
-use crate::handler::ollama::{Identifier, Update};
+use crate::{
+    handler::ollama::{Identifier, Update},
+    ollama,
+};
 
 use super::Context;
 
@@ -17,6 +18,7 @@ pub enum Command {
     Oi(String),
     Tldr,
     Summary(String),
+    DeepSearch(String),
 }
 
 impl Command {
@@ -26,6 +28,17 @@ impl Command {
             Command::Oi(_) => *self = Command::Oi(prompt.to_string()),
             Command::Tldr => (), // todo maybe
             Command::Summary(_) => (),
+            Command::DeepSearch(_) => (),
+        }
+    }
+
+    fn misses_prompt(&self) -> bool {
+        match self {
+            Command::Tldr => false,
+            Command::Hey(prompt)
+            | Command::Oi(prompt)
+            | Command::Summary(prompt)
+            | Command::DeepSearch(prompt) => prompt.is_empty(),
         }
     }
 }
@@ -45,6 +58,12 @@ pub async fn handler(
             return Ok(());
         }
     };
+
+    if command.misses_prompt() {
+        ctx.quick_reply(&msg, "You need to provide a valid prompt")
+            .await;
+        return Ok(());
+    }
 
     if let Some(prompt) = overrides.get_override(user.id).await {
         command.override_prompt(prompt);
@@ -125,41 +144,9 @@ pub async fn handler(
             let user_id = user.id;
 
             tokio::task::spawn(async move {
-                use reqwest::{
-                    cookie::Jar,
-                    header::{ACCEPT, ACCEPT_ENCODING, UPGRADE_INSECURE_REQUESTS, USER_AGENT},
-                };
-                const USER_AGENT_VALUE: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:126.0) Gecko/20100101 Firefox/126.0";
-                const ACCEPT_VALUE: &str = "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9";
-                const ACCEPT_ENCODING_VALUE: &str = "gzip, deflate, br";
-
-                // TODO: split everything up
-                // TODO: only instantiate these things once
-                let jar = Jar::default();
-
-                let yahoo_url = Url::from_str("https://www.yahoo.com").expect("invalid URL");
-
-                jar.add_cookie_str(
-                    "EuConsent=CQAgmoAQAgmoAAOACKNLA5EgAAAAAAAAACiQAAAAAAAA; Domain=.yahoo.com",
-                    &yahoo_url,
-                );
-
-                jar.add_cookie_str("GUCS=AUBc_l4M; Domain=.yahoo.com", &yahoo_url);
-
-                jar.add_cookie_str(
-                    "GUC=AQABCAFmdVtmoEIX3gNG&s=AQAAAFmEcNtP&g=ZnQUkw; Domain=.yahoo.com",
-                    &yahoo_url,
-                );
-
-                let website_content = reqwest::Client::builder()
-                    .cookie_provider(jar.into())
-                    .build()
-                    .expect("failed to build http client")
+                let website_content = ctx
+                    .http_client
                     .get(url.clone())
-                    .header(USER_AGENT, USER_AGENT_VALUE)
-                    .header(ACCEPT, ACCEPT_VALUE)
-                    .header(ACCEPT_ENCODING, ACCEPT_ENCODING_VALUE)
-                    .header(UPGRADE_INSECURE_REQUESTS, "1")
                     .send()
                     .await
                     .inspect_err(|error| log::error!("failed to call `{url}`, error: `{error}`"))?
@@ -185,10 +172,28 @@ pub async fn handler(
                         user_id,
                         message_id,
                     },
-                    prompt: format!(
-                        "Please provide a short summary of the text, if it is in Dutch reply only in Dutch, otherwise reply in English: \n{}",
-                        normalised.text
-                    ),
+                    prompt: ollama::prompts::summary(normalised.text),
+                });
+
+                Result::<(), reqwest::Error>::Ok(())
+            });
+        }
+
+        Command::DeepSearch(query) => {
+            let chat_id = msg.chat.id;
+            let message_id = msg.id;
+            let user_id = user.id;
+
+            tokio::task::spawn(async move {
+                let results = ctx.searxng.search(&query).await?;
+
+                ctx.ollama_notifier.notify(Update::Requested {
+                    identifier: Identifier {
+                        chat_id,
+                        user_id,
+                        message_id,
+                    },
+                    prompt: ollama::prompts::deep_search(query, results),
                 });
 
                 Result::<(), reqwest::Error>::Ok(())

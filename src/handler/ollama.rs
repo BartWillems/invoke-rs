@@ -25,6 +25,7 @@ pub enum Error {
 pub struct Config {
     pub api_uri: String,
     pub max_in_progress: Option<NonZeroUsize>,
+    pub model: crate::ollama::Model,
 }
 
 /// Identifier used to identify unique requests
@@ -103,21 +104,17 @@ pub struct Handler {
 }
 
 impl Handler {
-    pub fn try_new(
-        config: Config,
-        bot: Bot,
-        http_client: reqwest::Client,
-        // prompts: Prompts,
-    ) -> Result<Self, Error> {
+    pub fn try_new(config: Config, bot: Bot, http_client: reqwest::Client) -> Result<Self, Error> {
         let Config {
             api_uri,
             max_in_progress,
+            model,
         } = config;
 
         let (sender, receiver) = mpsc::unbounded_channel::<Update>();
         let notifier = Notifier::from(sender);
 
-        let client = Ollama::new(http_client, api_uri);
+        let client = Ollama::new(http_client, api_uri, model);
 
         Ok(Self {
             client,
@@ -132,7 +129,7 @@ impl Handler {
         self.notifier.clone()
     }
 
-    /// Start handling new requests and LocalAI progress updates
+    /// Start handling new requests and Ollama progress updates
     pub async fn start(mut self) {
         log::info!("Starting ollama handler");
         let mut queue = Queue::default();
@@ -205,15 +202,32 @@ impl Handler {
                 identifier,
                 response,
             } => {
-                log::info!("processing finished {identifier:?}, reponse: {response:?}");
+                log::info!("processing finished {identifier:?}, reponse: {response}");
 
                 queue.decrement_user_count(identifier.user_id);
 
-                self.bot
-                    .send_message(identifier.chat_id, response)
+                // try with markdown, fallback to regular in case of failure:
+                let res = self
+                    .bot
+                    .send_message(identifier.chat_id, &response)
+                    .parse_mode(teloxide::types::ParseMode::MarkdownV2)
                     .reply_to_message_id(identifier.message_id)
                     .send()
-                    .await?;
+                    .await;
+
+                match res {
+                    Ok(_) => return Ok(Response::None),
+                    Err(err) => {
+                        log::error!("failed to send markdown formatted response: {err}");
+
+                        // Retry without markdown formatting in case it's due to markdown
+                        self.bot
+                            .send_message(identifier.chat_id, response)
+                            .reply_to_message_id(identifier.message_id)
+                            .send()
+                            .await?;
+                    }
+                };
             }
 
             Update::Failed { identifier, reason } => {

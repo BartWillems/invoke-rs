@@ -59,7 +59,7 @@ impl UsernameProvider for Bot {
 }
 
 impl<U: UsernameProvider> Store<U> {
-    const PROMPT: &'static str = "The text below is a chat conversation. Each message is in the format of \"sender-name: message-content\". Respond only with a recap of what each person has said/done in the conversation. Always tag the users' usernames by prefixing an '@' before their name in your recap.";
+    const TLDR_PROMPT: &'static str = "The text below is a chat conversation. Each message is in the format of \"sender-name: message-content\". Respond only with a recap of what each person has said/done in the conversation. Always tag the users' usernames by prefixing an '@' before their name in your recap.";
 
     pub async fn new(
         url: &str,
@@ -123,7 +123,7 @@ impl<U: UsernameProvider> Store<U> {
         }
 
         let max_context_size = self.model.context_length();
-        let mut context_size = Self::PROMPT.len();
+        let mut context_size = Self::TLDR_PROMPT.len();
         let mut buffer = Vec::with_capacity(messages.len());
 
         for (user_id, message) in messages
@@ -148,7 +148,7 @@ impl<U: UsernameProvider> Store<U> {
 
         let mut chat_content = String::with_capacity(context_size);
 
-        writeln!(chat_content, "{}", Self::PROMPT)?;
+        writeln!(chat_content, "{}", Self::TLDR_PROMPT)?;
 
         for line in buffer.into_iter().rev() {
             writeln!(chat_content, "{line}")?;

@@ -4,8 +4,8 @@ use teloxide::types::UserId;
 
 use crate::handler::invoke;
 use crate::handler::local;
-use crate::handler::Store;
 use crate::local_ai::Prompts;
+use crate::store::Store;
 use crate::utils::languages::LanguageDetector;
 
 pub mod admin;
@@ -28,6 +28,8 @@ pub struct Context {
     pub ollama_notifier: crate::handler::ollama::Notifier,
     pub language: LanguageDetector,
     pub prompts: Prompts,
+    pub http_client: reqwest::Client,
+    pub searxng: crate::utils::SearXng,
 }
 
 impl Context {
