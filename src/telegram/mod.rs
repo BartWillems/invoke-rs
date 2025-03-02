@@ -9,6 +9,7 @@ use crate::store::Store;
 use crate::utils::languages::LanguageDetector;
 
 pub mod admin;
+pub mod fact_check;
 mod invoke_ai;
 mod local_ai;
 mod ollama;
@@ -30,6 +31,7 @@ pub struct Context {
     pub prompts: Prompts,
     pub http_client: reqwest::Client,
     pub searxng: crate::utils::SearXng,
+    pub fact_check_engine: fact_check::Engine,
 }
 
 impl Context {
@@ -83,6 +85,11 @@ pub fn handler(
             dptree::entry()
                 .filter_command::<ollama::Command>()
                 .endpoint(ollama::handler),
+        )
+        .branch(
+            dptree::entry()
+                .filter_command::<fact_check::Command>()
+                .endpoint(fact_check::handler),
         )
         .branch(dptree::entry().endpoint(catch_all));
 

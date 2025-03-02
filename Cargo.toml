@@ -14,6 +14,7 @@ chrono = "0.4"
 dotenv = "0.15"
 futures-util = "0.3"
 futures = "0.3"
+image = "0.25"
 lingua = { version = "1.6", default-features = false, features = [
     "french",
     "english",

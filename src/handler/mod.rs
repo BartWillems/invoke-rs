@@ -27,13 +27,14 @@ impl Handler {
             enable_french_detection,
             ollama_model,
             searxng_url,
+            fact_check_path,
         } = config;
 
         let bot = Bot::new(teloxide_token);
 
         let http_client = http_client();
 
-        let invoke = invoke::Handler::try_new(
+        let invoke = invoke::Handler::new(
             invoke::Config {
                 invoke_ai_url,
                 max_in_progress,
@@ -41,7 +42,7 @@ impl Handler {
             bot.clone(),
             http_client.clone(),
         )
-        .await?;
+        .await;
 
         let prompts = Prompts::default();
 
@@ -59,7 +60,7 @@ impl Handler {
             ollama::Config {
                 api_uri: ollama_url,
                 max_in_progress,
-                model: ollama_model,
+                model: ollama_model.clone(),
             },
             bot.clone(),
             http_client.clone(),
@@ -68,6 +69,8 @@ impl Handler {
         let store = crate::store::Store::new(&sqlite_path, bot.clone(), ollama_model).await?;
 
         let searxng = SearXng::new(http_client.clone(), searxng_url);
+
+        let fact_check_engine = crate::telegram::fact_check::Engine::new(fact_check_path).await?;
 
         let mut telegram = crate::telegram::handler(crate::telegram::Context {
             cfg: crate::telegram::Config {
@@ -82,6 +85,7 @@ impl Handler {
             prompts,
             http_client,
             searxng,
+            fact_check_engine,
         });
 
         log::info!("Starting all handlers...");

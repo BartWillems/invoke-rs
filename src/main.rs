@@ -26,6 +26,7 @@ pub struct AppConfig {
     #[serde(default)]
     ollama_model: ollama::Model,
     searxng_url: String,
+    fact_check_path: String,
 }
 
 #[tokio::main]

@@ -27,7 +27,7 @@ pub enum Error {
     NotInQueue,
 }
 
-#[derive(Debug, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
 pub struct Config {
     pub invoke_ai_url: String,
     pub max_in_progress: Option<NonZeroUsize>,
@@ -125,6 +125,18 @@ impl Handler {
             notifier,
             max_in_progress: max_in_progress.unwrap_or(NonZeroUsize::new(3).unwrap()),
         })
+    }
+
+    /// Try to connect indefinitely to invoke-ai, only returns a handler once the connection is established
+    pub async fn new(config: Config, bot: Bot, http_client: reqwest::Client) -> Self {
+        loop {
+            match Self::try_new(config.clone(), bot.clone(), http_client.clone()).await {
+                Ok(handler) => return handler,
+                Err(err) => log::error!("failed to connect to invoke-ai: {err}"),
+            }
+
+            tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+        }
     }
 
     pub fn notifier(&self) -> Notifier {

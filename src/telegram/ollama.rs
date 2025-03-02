@@ -34,11 +34,10 @@ impl Command {
 
     fn misses_prompt(&self) -> bool {
         match self {
-            Command::Tldr => false,
-            Command::Hey(prompt)
-            | Command::Oi(prompt)
-            | Command::Summary(prompt)
-            | Command::DeepSearch(prompt) => prompt.is_empty(),
+            Command::Tldr | Command::Summary(_) => false,
+            Command::Hey(prompt) | Command::Oi(prompt) | Command::DeepSearch(prompt) => {
+                prompt.is_empty()
+            }
         }
     }
 }
@@ -208,5 +207,6 @@ fn find_url_in_reply(msg: &Message) -> Option<Url> {
     msg.reply_to_message()?
         .text()?
         .split_whitespace()
+        .filter(|word| word.starts_with("http://") || word.starts_with("https://"))
         .find_map(|word| Url::parse(word).ok())
 }

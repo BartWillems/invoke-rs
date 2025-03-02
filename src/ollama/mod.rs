@@ -11,39 +11,18 @@ pub struct Ollama {
 }
 
 #[derive(Debug, Serialize)]
-pub struct Request {
-    model: Model,
+pub struct Request<'a> {
+    model: &'a Model,
     prompt: String,
     stream: bool,
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
-pub enum Model {
-    #[serde(rename = "phi3:mini-128k")]
-    Phi3Mini128k,
-    #[serde(rename = "llama3:8b")]
-    Llama3,
-    #[serde(rename = "aya:8b")]
-    Aya,
-    #[serde(rename = "mistral:7b")]
-    Mistral,
-    #[default]
-    #[serde(rename = "qwen2:7b")]
-    Qwen2,
-    #[serde(rename = "gemma2:9b")]
-    Gemma2,
-}
+#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
+pub struct Model(String);
 
 impl Model {
     pub fn context_length(&self) -> usize {
-        match self {
-            Model::Phi3Mini128k => 131072,
-            Model::Llama3 => 8192,
-            Model::Aya => 8192,
-            Model::Mistral => 32768,
-            Model::Qwen2 => 32768,
-            Model::Gemma2 => 8192,
-        }
+        4096
     }
 }
 
@@ -82,7 +61,7 @@ impl Ollama {
             .post(format!("{}/api/generate", self.api_uri.as_str()))
             .json(&Request {
                 prompt,
-                model: self.model,
+                model: &self.model,
                 stream: false,
             })
             .send()
@@ -90,8 +69,68 @@ impl Ollama {
             .text()
             .await?;
 
-        let response = serde_json::from_str(res.as_str())?;
+        let response = serde_json::from_str(res.as_str()).map(Self::filter_think_tags)?;
 
         Ok(response)
+    }
+
+    fn filter_think_tags(mut response: Response) -> Response {
+        const CLOSE_TAG: &'static str = "</think>";
+
+        if !response.model.as_str().contains("deepseek-r1") {
+            return response;
+        }
+
+        if !response.response.as_str().starts_with("<think>") {
+            return response;
+        }
+
+        let Some(stop_idx) = response.response.as_str().find(CLOSE_TAG) else {
+            return response;
+        };
+
+        if response.response.len() > stop_idx + CLOSE_TAG.len() {
+            response.response = response.response[(stop_idx + CLOSE_TAG.len())..].to_string();
+        }
+
+        response
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_filter_think_tags() {
+        let response = Response {
+            response: "<think>asldkl</think>the rest of the content".into(),
+            model: "deepseek-r1".into(),
+            created_at: "foo".into(),
+            done: true,
+            eval_count: None,
+            total_duration: None,
+            load_duration: None,
+            prompt_eval_count: None,
+            prompt_eval_duration: None,
+            eval_duration: None,
+        };
+
+        let filtered = Ollama::filter_think_tags(response);
+        assert_eq!(filtered.response, "the rest of the content".to_string());
+
+        // do it again just to be sure
+        let filtered = Ollama::filter_think_tags(filtered);
+        assert_eq!(filtered.response, "the rest of the content".to_string());
+
+        // without other content
+        let response = Ollama::filter_think_tags(Response {
+            response: "<think>some thoughts without a result</think>".to_string(),
+            ..filtered
+        });
+        assert_eq!(
+            response.response,
+            "<think>some thoughts without a result</think>".to_string()
+        );
     }
 }

@@ -4,7 +4,7 @@ use crate::utils::searxng::SearchResult;
 
 pub fn summary(content: impl Display) -> String {
     format!(
-        "Provide a concise summary of the text wrapped in `<text></text>` tags.
+        "Provide a concise summary of the provided text.
 Provide the summary in bullet points when appropriate.
 
 DO NOT repeat the question.
@@ -16,8 +16,6 @@ End with a 1 sentence summary of the text.
 </text>"
     )
 }
-
-// Provide the URLs referenced by citations at the bottom in the following format: Citation [number]: [url]
 
 pub fn deep_search(question: impl Display, sources: Vec<SearchResult>) -> String {
     let formatted_sources = sources
